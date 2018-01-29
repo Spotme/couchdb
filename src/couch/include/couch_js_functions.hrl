@@ -39,11 +39,11 @@
             throw({forbidden: 'doc.roles must be an array'});
         }
 
-        for (var idx = 0; idx < newDoc.roles.length; idx++) {
-            if (typeof newDoc.roles[idx] !== 'string') {
-                throw({forbidden: 'doc.roles can only contain strings'});
-            }
-        }
+        // for (var idx = 0; idx < newDoc.roles.length; idx++) {
+        //     if (typeof newDoc.roles[idx] !== 'string') {
+        //         throw({forbidden: 'doc.roles can only contain strings'});
+        //     }
+        // }
 
         if (newDoc._id !== ('org.couchdb.user:' + newDoc.name)) {
             throw({
