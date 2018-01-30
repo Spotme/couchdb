@@ -48,22 +48,8 @@ default_authentication_handler(Req) ->
 cookie_authentication_handler(Req) ->
     couch_httpd_auth:cookie_authentication_handler(Req, chttpd_auth_cache).
 
-
 key_authentification_handler(Req) ->
-      % priority to the query string
-      case couch_httpd:qs_value(Req, "auth_key") of
-          undefined ->
-              XKey = couch_config:get("spotme", "x_auth_key", "X-Auth-Key"),
-              case couch_httpd:header_value(Req, XKey) of
-                  undefined ->
-                      Req;
-                  HdrKey ->
-                      validate_key(Req, HdrKey)
-
-              end;
-          Key ->
-              validate_key(Req, Key)
-      end.
+    couch_httpd_auth:key_authentification_handler(Req).
 
 party_mode_handler(Req) ->
     case config:get("chttpd", "require_valid_user", "false") of
@@ -85,55 +71,6 @@ handle_session_req(Req) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
-%% TODO: add validation against IP & Domain.
-validate_key(Req, Key) ->
-    case couch_key:get_key(Key) of
-        nil ->
-            throw({unauthorized, <<"invalid key">>});
-        KeyProps ->
-            ok = validate_expires(KeyProps),
-            Roles = couch_util:get_value(<<"roles">>, KeyProps, []),
-            Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
-    end.
-
-validate_expires(KeyProps) ->
-    case get_value(<<"expires">>, KeyProps) of
-        undefined ->
-            ok;
-        Expires ->
-            CurrentTime = get_unix_timestamp(erlang:now()),
-            if CurrentTime > Expires ->
-                    throw({unauthorized, <<"key expired">>});
-                    true -> ok
-            end
-    end.
-
-
-get_unix_timestamp({MegaSecs, Secs, _MicroSecs}) ->
-    MegaSecs*1000000+Secs.
-
-ensure_exists(DbName) when is_list(DbName) ->
-      ensure_exists(list_to_binary(DbName));
-ensure_exists(DbName) ->
-      Options = [{user_ctx, #user_ctx{roles=[<<"_admin">>]}}],
-      case couch_db:open_int(DbName, Options) of
-      {ok, Db} ->
-          {ok, Db};
-      _ ->
-          couch_server:create(DbName, Options)
-      end.
-
-get_value(Key, List) ->
-      get_value(Key, List, undefined).
-
-get_value(Key, List, Default) ->
-      case lists:keysearch(Key, 1, List) of
-      {value, {Key,Value}} ->
-          Value;
-      false ->
-          Default
-      end.
 
 maybe_handle(Func, Args, Default) ->
     Handle = couch_epi:get_handle(?SERVICE_ID),

@@ -18,6 +18,7 @@
 -export([default_authentication_handler/1, default_authentication_handler/2,
 	 special_test_authentication_handler/1]).
 -export([cookie_authentication_handler/1, cookie_authentication_handler/2]).
+-export([key_authentification_handler/1]).
 -export([null_authentication_handler/1]).
 -export([proxy_authentication_handler/1, proxy_authentification_handler/1]).
 -export([cookie_auth_header/2]).
@@ -123,6 +124,23 @@ default_authentication_handler(Req, AuthModule) ->
 null_authentication_handler(Req) ->
     Req#httpd{user_ctx=?ADMIN_USER}.
 
+% x-auth-key handler
+key_authentification_handler(Req) ->
+	      % priority to the query string
+	      case couch_httpd:qs_value(Req, "auth_key") of
+	          undefined ->
+	              XKey = couch_config:get("spotme", "x_auth_key", "X-Auth-Key"),
+	              case couch_httpd:header_value(Req, XKey) of
+	                  undefined ->
+	                      Req;
+	                  HdrKey ->
+	                      validate_key(Req, HdrKey)
+
+	              end;
+	          Key ->
+	              validate_key(Req, Key)
+	      end.
+
 %% @doc proxy auth handler.
 %
 % This handler allows creation of a userCtx object from a user authenticated remotly.
@@ -148,7 +166,7 @@ proxy_authentication_handler(Req) ->
 %% @deprecated
 proxy_authentification_handler(Req) ->
     proxy_authentication_handler(Req).
-    
+
 proxy_auth_user(Req) ->
     XHeaderUserName = config:get("couch_httpd_auth", "x_auth_username",
                                 "X-Auth-CouchDB-UserName"),
@@ -506,3 +524,44 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
     Peer = Req:get(peer),
     couch_log:warning("~p: Authentication failed for user ~s from ~s",
         [?MODULE, User, Peer]).
+
+
+%% ------------------------------------------------------------------
+%% Internal Functions/Helpers
+%% ------------------------------------------------------------------
+validate_key(Req, Key) ->
+    case couch_key:get_key(Key) of
+        nil ->
+            throw({unauthorized, <<"invalid key">>});
+        KeyProps ->
+            ok = validate_expires(KeyProps),
+            Roles = couch_util:get_value(<<"roles">>, KeyProps, []),
+            Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
+    end.
+
+validate_expires(KeyProps) ->
+    case get_value(<<"expires">>, KeyProps) of
+        undefined ->
+            ok;
+        Expires ->
+            CurrentTime = get_unix_timestamp(erlang:now()),
+            if CurrentTime > Expires ->
+                    throw({unauthorized, <<"key expired">>});
+                    true -> ok
+            end
+    end.
+
+
+get_unix_timestamp({MegaSecs, Secs, _MicroSecs}) ->
+    MegaSecs*1000000+Secs.
+
+get_value(Key, List) ->
+      get_value(Key, List, undefined).
+
+get_value(Key, List, Default) ->
+      case lists:keysearch(Key, 1, List) of
+      {value, {Key,Value}} ->
+          Value;
+      false ->
+          Default
+      end.
