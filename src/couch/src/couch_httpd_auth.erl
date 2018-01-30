@@ -513,6 +513,8 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 %% Internal Functions/Helpers
 %% ------------------------------------------------------------------
+-include_lib("couch_mrview/include/couch_mrview.hrl").
+
 couch_key_get_key(Key) when is_list(Key) ->
     couch_key_get_key(?l2b(Key));
 couch_key_get_key(Key) ->
@@ -523,14 +525,14 @@ couch_key_get_key(Key) ->
             nil
     end.
 couch_key_get_key(DbName, Key) ->
-    couch_log:info("couch_httpd_auth.erl couch_key_get_key DbName ~p", [DbName]),
-    couch_log:info("couch_httpd_auth.erl couch_key_get_key Key ~p", [Key]),
+    % couch_log:info("couch_httpd_auth.erl couch_key_get_key DbName ~p", [DbName]),
+    % couch_log:info("couch_httpd_auth.erl couch_key_get_key Key ~p", [Key]),
     % nil.
     % Options = [{user_ctx, #user_ctx{roles=[<<"_admin">>]}}],
     % {ok, Db} = couch_db:clustered_db(DbName, Options),
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
-    QueryArgs = {},
+    QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     {ok, Resp} = fabric:query_view(DbName, DesignName, ViewName, QueryArgs),
     couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
     % {ok, Resp} = fabric:query_view(Db, Options, DDoc, ViewName,
