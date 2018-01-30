@@ -525,35 +525,17 @@ couch_key_get_key(Key) ->
             nil
     end.
 couch_key_get_key(DbName, Key) ->
-    % couch_log:info("couch_httpd_auth.erl couch_key_get_key DbName ~p", [DbName]),
-    % couch_log:info("couch_httpd_auth.erl couch_key_get_key Key ~p", [Key]),
-    % nil.
-    % Options = [{user_ctx, #user_ctx{roles=[<<"_admin">>]}}],
-    % {ok, Db} = couch_db:clustered_db(DbName, Options),
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
-    {ok, Resp} = fabric:query_view(DbName, DesignName, ViewName, QueryArgs),
-    couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
-    % {ok, Resp} = fabric:query_view(Db, Options, DDoc, ViewName,
-    %     fun couch_mrview_http:view_cb/2, VAcc, Args),
-
-    nil.
-    % Options = [{user_ctx, #user_ctx{roles=[<<"_admin">>]}}],
-    % case couch_db:open_int(DbName, Options) of
-    %     {ok, Db0} ->
-    %         ok = ensure_ddoc_exists(Db0, ?DNAME),
-    %         {ok, Db} = couch_db:reopen(Db0),
-    %         try
-    %             KeyProps = get_key_props(Db, ?DNAME, Key),
-    %             % validate_key_props(KeyProps)
-    %         after
-    %             couch_db:close(Db)
-    %         end;
-    %     _ ->
-    %         couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
-    %         nil
-    % end.
+    case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
+    {ok, Resp} ->
+        couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
+        nil;
+    _ ->
+        couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
+        nil
+    end.
 
 % x-auth-key handler
 key_authentification_handler(Req) ->
@@ -561,8 +543,6 @@ key_authentification_handler(Req) ->
     % priority to the query string
     case couch_httpd:qs_value(Req, "auth_key") of
         undefined ->
-            % XKey = couch_config:get("spotme", "x_auth_key", "X-Auth-Key"),
-            % case couch_httpd:header_value(Req, XKey) of
             case couch_httpd:header_value(Req, "X-Auth-Key") of
                 undefined ->
                     Req;
@@ -579,33 +559,6 @@ validate_key(Req, Key) ->
         nil ->
             throw({unauthorized, <<"invalid key">>});
         KeyProps ->
-            % ok = validate_expires(KeyProps),
             Roles = couch_util:get_value(<<"roles">>, KeyProps, []),
             Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
     end.
-
-% validate_expires(KeyProps) ->
-%     case get_value(<<"expires">>, KeyProps) of
-%         undefined ->
-%             ok;
-%         Expires ->
-%             CurrentTime = get_unix_timestamp(erlang:now()),
-%             if CurrentTime > Expires ->
-%                     throw({unauthorized, <<"key expired">>});
-%                     true -> ok
-%             end
-%     end.
-
-% get_unix_timestamp({MegaSecs, Secs, _MicroSecs}) ->
-%     MegaSecs*1000000+Secs.
-
-% get_value(Key, List) ->
-%       get_value(Key, List, undefined).
-
-% get_value(Key, List, Default) ->
-%       case lists:keysearch(Key, 1, List) of
-%       {value, {Key,Value}} ->
-%           Value;
-%       false ->
-%           Default
-%       end.
