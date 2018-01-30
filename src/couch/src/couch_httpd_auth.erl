@@ -515,6 +515,27 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 -include_lib("couch_mrview/include/couch_mrview.hrl").
 
+extract(Key, Data) ->
+    extract(Key, Data, []).
+extract(_Key, [], Acc) ->
+    Acc;
+extract(Key, {Key,_}=KV, Acc) ->
+    [KV|Acc];
+extract(Key, [{Key,_}=KV|Fields], Acc) ->
+    extract(Key, Fields, [KV|Acc]);
+extract(Key, [{_,V}|Fields], Acc) when is_tuple(V); is_list(V) ->
+    extract(Key, Fields, extract(Key, V, Acc));
+extract(Key, Data, Acc) when is_list(Data) ->
+    lists:foldl(fun(V, FoldAcc) when is_tuple(V); is_list(V) ->
+                        extract(Key, V, FoldAcc);
+                   (_, FoldAcc) ->
+                        FoldAcc
+                end, Acc, Data);
+extract(Key, Data, Acc) when is_tuple(Data) ->
+    extract(Key, tuple_to_list(Data), Acc).
+
+
+
 couch_key_get_key(Key) when is_list(Key) ->
     couch_key_get_key(?l2b(Key));
 couch_key_get_key(Key) ->
@@ -531,6 +552,8 @@ couch_key_get_key(DbName, Key) ->
     case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
+        N = extract(<<"roles">>, Resp),
+        couch_log:info("UTIL get value from resp = ~p", [N]),
         nil;
     _ ->
         couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
