@@ -15,13 +15,7 @@
     }">>
 }]}).
 
--define(LOG_INFO(Format, Args),
-    case couch_log:info_on() of
-        true ->
-            couch_log:info(Format, Args);
-        false -> ok
-    end).
-  
+
 
 -include_lib("couch/include/couch_db.hrl").
 -include_lib("couch_mrview/include/couch_mrview.hrl").
@@ -50,7 +44,7 @@ get_key(DbName, Key) ->
                 couch_db:close(Db)
             end;
         _ ->
-            ?LOG_INFO("cant't load key: db ~p doesn't exist", [DbName]),
+            couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
             nil
     end.
 
