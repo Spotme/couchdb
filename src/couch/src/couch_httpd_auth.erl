@@ -87,7 +87,6 @@ default_authentication_handler(Req) ->
     default_authentication_handler(Req, couch_auth_cache).
 
 default_authentication_handler(Req, AuthModule) ->
-    couch_log:info("default_authentication_handler ~n", []),
     case basic_name_pw(Req) of
     {User, Pass} ->
         case AuthModule:get_user_creds(Req, User) of
@@ -515,27 +514,6 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 -include_lib("couch_mrview/include/couch_mrview.hrl").
 
-extract(Key, Data) ->
-    extract(Key, Data, []).
-extract(_Key, [], Acc) ->
-    Acc;
-extract(Key, {Key,_}=KV, Acc) ->
-    [KV|Acc];
-extract(Key, [{Key,_}=KV|Fields], Acc) ->
-    extract(Key, Fields, [KV|Acc]);
-extract(Key, [{_,V}|Fields], Acc) when is_tuple(V); is_list(V) ->
-    extract(Key, Fields, extract(Key, V, Acc));
-extract(Key, Data, Acc) when is_list(Data) ->
-    lists:foldl(fun(V, FoldAcc) when is_tuple(V); is_list(V) ->
-                        extract(Key, V, FoldAcc);
-                   (_, FoldAcc) ->
-                        FoldAcc
-                end, Acc, Data);
-extract(Key, Data, Acc) when is_tuple(Data) ->
-    extract(Key, tuple_to_list(Data), Acc).
-
-
-
 couch_key_get_key(Key) when is_list(Key) ->
     couch_key_get_key(?l2b(Key));
 couch_key_get_key(Key) ->
@@ -552,9 +530,13 @@ couch_key_get_key(DbName, Key) ->
     case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
-        N = extract(<<"roles">>, Resp),
-        couch_log:info("UTIL get value from resp = ~p", [N]),
-        nil;
+        Row = couch_util:get_value(row, Resp, []),
+        couch_log:info("couch_httpd_auth.erl couch_key_get_key Row ~p", [Row]),
+        Value = couch_util:get_value(value, Row, []),
+        couch_log:info("couch_httpd_auth.erl couch_key_get_key Value ~p", [Value]),
+        Value1 = element(1, Value),
+        couch_log:info("couch_httpd_auth.erl couch_key_get_key Value1 ~p", [Value1]),
+        Value1;
     _ ->
         couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
         nil
@@ -582,6 +564,8 @@ validate_key(Req, Key) ->
         nil ->
             throw({unauthorized, <<"invalid key">>});
         KeyProps ->
+            couch_log:info("couch_httpd_auth.erl validate_key KeyProps ~p", [KeyProps]),
             Roles = couch_util:get_value(<<"roles">>, KeyProps, []),
+            couch_log:info("couch_httpd_auth.erl validate_key Roles ~p", [Roles]),
             Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
     end.
