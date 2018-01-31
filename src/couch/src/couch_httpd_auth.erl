@@ -531,20 +531,25 @@ key_authentification_get_key(DbName, Key) ->
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Resp ~p", [Resp]),
-            Row = couch_util:get_value(row, Resp, []),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Row ~p", [Row]),
-            Value = couch_util:get_value(value, Row, []),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value ~p", [Value]),
-            Value1 = element(1, Value),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value1 ~p", [Value1]),
-            Value1
+          key_authentification_parse_response(Resp)
         catch
           _:_ -> nil
         end
     catch
         _:_ -> nil
     end.
+
+
+key_authentification_parse_response(Resp) ->
+  couch_log:info("couch_httpd_auth.erl key_authentification_parse_response: ~p", [Resp]),
+  Row = couch_util:get_value(row, Resp, []),
+  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Row ~p", [Row]),
+  Value = couch_util:get_value(value, Row, []),
+  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value ~p", [Value]),
+  Value1 = element(1, Value),
+  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value1 ~p", [Value1]),
+  Value1.
+
 
 key_authentification_validate_key(Req, Key) ->
     couch_log:info("couch_httpd_auth.erl key_authentification_validate_key ~s", [Key]),
