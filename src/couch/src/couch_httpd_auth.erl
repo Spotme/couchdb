@@ -531,7 +531,12 @@ key_authentification_get_key(DbName, Key) ->
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
-          key_authentification_parse_response(Resp)
+          case key_authentification_get_nested_proplist_key(Resp, [row, value]) of
+            KeyData ->
+              element(1, KeyData);
+            not_found ->
+              nil
+          end
         catch
           _:_ -> nil
         end
@@ -539,17 +544,12 @@ key_authentification_get_key(DbName, Key) ->
         _:_ -> nil
     end.
 
-
-key_authentification_parse_response(Resp) ->
-  couch_log:info("couch_httpd_auth.erl key_authentification_parse_response: ~p", [Resp]),
-  Row = couch_util:get_value(row, Resp, []),
-  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Row ~p", [Row]),
-  Value = couch_util:get_value(value, Row, []),
-  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value ~p", [Value]),
-  Value1 = element(1, Value),
-  couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value1 ~p", [Value1]),
-  Value1.
-
+key_authentification_get_nested_proplist_key(Props, [Key|Keys]) ->
+  case couch_util:get_value(Key, Props, nil) of
+    nil -> not_found;
+    Value -> key_authentification_get_nested_proplist_key(Value, Keys)
+  end;
+key_authentification_get_nested_proplist_key(Value, []) -> Value.
 
 key_authentification_validate_key(Req, Key) ->
     couch_log:info("couch_httpd_auth.erl key_authentification_validate_key ~s", [Key]),
