@@ -12,13 +12,14 @@
 
 -module(couch_httpd_auth).
 -include_lib("couch/include/couch_db.hrl").
+-include_lib("couch_mrview/include/couch_mrview.hrl").
 
 -export([party_mode_handler/1]).
 
 -export([default_authentication_handler/1, default_authentication_handler/2,
      special_test_authentication_handler/1]).
 -export([cookie_authentication_handler/1, cookie_authentication_handler/2]).
--export([key_authentification_handler/1]).
+-export([key_authentication_handler/1]).
 -export([null_authentication_handler/1]).
 -export([proxy_authentication_handler/1, proxy_authentification_handler/1]).
 -export([cookie_auth_header/2]).
@@ -512,9 +513,7 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 %% x-auth-key handler
 %% ------------------------------------------------------------------
--include_lib("couch_mrview/include/couch_mrview.hrl").
-
-key_authentification_extract_auth_key(Req) ->
+key_authentication_extract_auth_key(Req) ->
     case couch_httpd:qs_value(Req, "auth_key") of
     undefined ->
         couch_httpd:header_value(Req, "X-Auth-Key");
@@ -522,26 +521,26 @@ key_authentification_extract_auth_key(Req) ->
         AuthKey
     end.
 
-key_authentification_parse_auth_key(AuthKey) when is_list(AuthKey) ->
-    key_authentification_parse_auth_key(?l2b(AuthKey));
-key_authentification_parse_auth_key(AuthKey) ->
+key_authentication_parse_auth_key(AuthKey) when is_list(AuthKey) ->
+    key_authentication_parse_auth_key(?l2b(AuthKey));
+key_authentication_parse_auth_key(AuthKey) ->
     binary:split(AuthKey, <<",">>).
 
-key_authentification_get_nested_proplist_key(Props, [Key|Keys]) ->
+key_authentication_get_nested_proplist_key(Props, [Key|Keys]) ->
   case couch_util:get_value(Key, Props, nil) of
     nil -> not_found;
-    Value -> key_authentification_get_nested_proplist_key(Value, Keys)
+    Value -> key_authentication_get_nested_proplist_key(Value, Keys)
   end;
-key_authentification_get_nested_proplist_key(Value, []) -> Value.
+key_authentication_get_nested_proplist_key(Value, []) -> Value.
 
-key_authentification_get_auth_key(DbName, Key) ->
+key_authentication_get_auth_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
-          case key_authentification_get_nested_proplist_key(Resp, [row, value]) of
+          case key_authentication_get_nested_proplist_key(Resp, [row, value]) of
             KeyData ->
               element(1, KeyData);
             not_found ->
@@ -554,9 +553,9 @@ key_authentification_get_auth_key(DbName, Key) ->
         _:_ -> nil
     end.
 
-key_authentification_validate_auth_key(Req, DbName, Key) ->
+key_authentication_validate_auth_key(Req, DbName, Key) ->
     couch_log:info("key_authentification_validate_auth_key DbName ~p Key ~p", [DbName, Key]),
-    case key_authentification_get_auth_key(DbName, Key) of
+    case key_authentication_get_auth_key(DbName, Key) of
         nil ->
             throw({unauthorized, <<"invalid key">>});
         AuthKeyValue ->
@@ -565,15 +564,15 @@ key_authentification_validate_auth_key(Req, DbName, Key) ->
             UserCtx=#user_ctx{name=Key, roles=Roles},
             couch_log:info("key_authentification_validate_auth_key AuthKeyValue ~p Roles ~p UserCtx ~p", [AuthKeyValue, Roles, UserCtx]),
             Req#httpd{user_ctx=UserCtx}
-    end.    
+    end.
 
-key_authentification_handler(Req) ->
+key_authentication_handler(Req) ->
     couch_log:info("key_authentification_handler ~p", [Req]),
-    case key_authentification_extract_auth_key(Req) of
+    case key_authentication_extract_auth_key(Req) of
     undefined ->
         Req;
     AuthKey ->
-        [DbName, Key] = key_authentification_parse_auth_key(AuthKey),
+        [DbName, Key] = key_authentication_parse_auth_key(AuthKey),
         % db access restiction
         #httpd{path_parts=[ReqDbName,_]}=Req,
         case string:equal(ReqDbName, DbName) of
@@ -582,6 +581,6 @@ key_authentification_handler(Req) ->
             throw({unauthorized, <<"invalid key">>});
         true ->
             couch_log:info("key_authentification_handler ReqDbName ~p DbName ~p Key ~p", [ReqDbName, DbName, Key]),
-            key_authentification_validate_auth_key(Req, DbName, Key)
+            key_authentication_validate_auth_key(Req, DbName, Key)
         end
     end.
