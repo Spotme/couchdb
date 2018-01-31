@@ -529,14 +529,18 @@ couch_key_get_key(DbName, Key) ->
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
-        couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
-        Row = couch_util:get_value(row, Resp, []),
-        couch_log:info("couch_httpd_auth.erl couch_key_get_key Row ~p", [Row]),
-        Value = couch_util:get_value(value, Row, []),
-        couch_log:info("couch_httpd_auth.erl couch_key_get_key Value ~p", [Value]),
-        Value1 = element(1, Value),
-        couch_log:info("couch_httpd_auth.erl couch_key_get_key Value1 ~p", [Value1]),
-        Value1;
+        try
+            couch_log:info("couch_httpd_auth.erl couch_key_get_key Resp ~p", [Resp]),
+            Row = couch_util:get_value(row, Resp, []),
+            couch_log:info("couch_httpd_auth.erl couch_key_get_key Row ~p", [Row]),
+            Value = couch_util:get_value(value, Row, []),
+            couch_log:info("couch_httpd_auth.erl couch_key_get_key Value ~p", [Value]),
+            Value1 = element(1, Value),
+            couch_log:info("couch_httpd_auth.erl couch_key_get_key Value1 ~p", [Value1]),
+            Value1
+        catch
+            _:_ -> nil
+        end;
     _ ->
         couch_log:notice("cant't load key: db ~p doesn't exist", [DbName]),
         nil
@@ -544,7 +548,7 @@ couch_key_get_key(DbName, Key) ->
 
 % x-auth-key handler
 key_authentification_handler(Req) ->
-    couch_log:info("couch_httpd_auth.erl key_authentification_handler ~n", []),
+    couch_log:info("couch_httpd_auth.erl key_authentification_handler ~p", [Req]),
     % priority to the query string
     case couch_httpd:qs_value(Req, "auth_key") of
         undefined ->
