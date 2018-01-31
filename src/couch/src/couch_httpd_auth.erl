@@ -514,61 +514,70 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 -include_lib("couch_mrview/include/couch_mrview.hrl").
 
-key_authentification_get_key(Key) when is_list(Key) ->
-    key_authentification_get_key(?l2b(Key));
-key_authentification_get_key(Key) ->
-    case binary:split(Key, <<",">>) of
-        [DbName, Key1] ->
-            key_authentification_get_key(DbName, Key1);
-        _ ->
-            nil
+key_authentification_extract_auth_key(Req) ->
+    case couch_httpd:qs_value(Req, "auth_key") of
+    undefined ->
+        couch_httpd:header_value(Req, "X-Auth-Key");
+    AuthKey ->
+        AuthKey
     end.
-key_authentification_get_key(DbName, Key) ->
+
+key_authentification_parse_auth_key(AuthKey) when is_list(AuthKey) ->
+    key_authentification_parse_auth_key(?l2b(AuthKey));
+key_authentification_parse_auth_key(AuthKey) ->
+    binary:split(AuthKey, <<",">>).
+
+key_authentification_get_auth_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Resp ~p", [Resp]),
+            couch_log:info("key_authentification_get_key Resp ~p", [Resp]),
             Row = couch_util:get_value(row, Resp, []),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Row ~p", [Row]),
+            couch_log:info("key_authentification_get_key Row ~p", [Row]),
             Value = couch_util:get_value(value, Row, []),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value ~p", [Value]),
+            couch_log:info("key_authentification_get_key Value ~p", [Value]),
             Value1 = element(1, Value),
-            couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value1 ~p", [Value1]),
+            couch_log:info("key_authentification_get_key Value1 ~p", [Value1]),
             Value1
         catch
             _:_ -> nil
         end;
     _ ->
-        couch_log:notice("couch_httpd_auth.erl key_authentification_get_key db not found ~p", [DbName]),
+        couch_log:error("key_authentification_get_auth_key error query view ~p/_design/~p/_view/~p", [DbName, DesignName, ViewName]),
         nil
     end.
 
-key_authentification_validate_key(Req, Key) ->
-    couch_log:info("couch_httpd_auth.erl key_authentification_validate_key ~p", [Key]),
-    case key_authentification_get_key(Key) of
+key_authentification_validate_auth_key(Req, DbName, Key) ->
+    couch_log:info("key_authentification_validate_auth_key DbName ~p Key ~p", [DbName, Key]),
+    case key_authentification_get_auth_key(DbName, Key) of
         nil ->
             throw({unauthorized, <<"invalid key">>});
-        KeyProps ->
-            couch_log:info("couch_httpd_auth.erl key_authentification_validate_key KeyProps ~p", [KeyProps]),
-            Roles = couch_util:get_value(<<"roles">>, KeyProps, []),
-            couch_log:info("couch_httpd_auth.erl key_authentification_validate_key Roles ~p", [Roles]),
-            Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
-    end.
+        AuthKeyValue ->
+            Roles = couch_util:get_value(<<"roles">>, AuthKeyValue, []),
+            % Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
+            UserCtx=#user_ctx{name=Key, roles=Roles},
+            couch_log:info("key_authentification_validate_auth_key AuthKeyValue ~p Roles ~p UserCtx ~p", [AuthKeyValue, Roles, UserCtx]),
+            Req#httpd{user_ctx=UserCtx}
+    end.    
 
 key_authentification_handler(Req) ->
-    couch_log:info("couch_httpd_auth.erl key_authentification_handler ~p", [Req]),
-    % priority to the query string
-    case couch_httpd:qs_value(Req, "auth_key") of
-        undefined ->
-            case couch_httpd:header_value(Req, "X-Auth-Key") of
-                undefined ->
-                    Req;
-                HdrKey ->
-                    key_authentification_validate_key(Req, HdrKey)
-            end;
-        Key ->
-            key_authentification_validate_key(Req, Key)
+    couch_log:info("key_authentification_handler ~p", [Req]),
+    case key_authentification_extract_auth_key(Req) of
+    undefined ->
+        Req;
+    AuthKey ->
+        [DbName, Key] = key_authentification_parse_auth_key(AuthKey),
+        % db access restiction
+        #httpd{path_parts=[ReqDbName,_]}=Req,
+        case string:equal(ReqDbName, DbName) of
+        false ->
+            couch_log:notice("key_authentification_handler: trying to access db different from the key ~p vs ~p", [ReqDbName, DbName]),
+            throw({unauthorized, <<"invalid key">>});
+        true ->
+            couch_log:info("key_authentification_handler ReqDbName ~p DbName ~p Key ~p", [ReqDbName, DbName, Key]),
+            key_authentification_validate_auth_key(Req, DbName, Key)
+        end
     end.
