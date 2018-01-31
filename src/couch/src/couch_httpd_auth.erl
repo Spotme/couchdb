@@ -523,11 +523,12 @@ key_authentification_get_key(Key) ->
         _ ->
             nil
     end.
+
 key_authentification_get_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
-    case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
+    try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
             couch_log:info("couch_httpd_auth.erl key_authentification_get_key Resp ~p", [Resp]),
@@ -539,15 +540,14 @@ key_authentification_get_key(DbName, Key) ->
             couch_log:info("couch_httpd_auth.erl key_authentification_get_key Value1 ~p", [Value1]),
             Value1
         catch
-            _:_ -> nil
-        end;
-    _ ->
-        couch_log:notice("couch_httpd_auth.erl key_authentification_get_key db not found ~p", [DbName]),
-        nil
+          _:_ -> nil
+        end
+    catch
+        _:_ -> nil
     end.
 
 key_authentification_validate_key(Req, Key) ->
-    couch_log:info("couch_httpd_auth.erl key_authentification_validate_key ~p", [Key]),
+    couch_log:info("couch_httpd_auth.erl key_authentification_validate_key ~s", [Key]),
     case key_authentification_get_key(Key) of
         nil ->
             throw({unauthorized, <<"invalid key">>});
