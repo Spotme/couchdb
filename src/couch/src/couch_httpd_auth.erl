@@ -513,11 +513,27 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
 %% ------------------------------------------------------------------
 %% x-auth-key handler
 %% ------------------------------------------------------------------
+key_authentication_handler(Req) ->
+    case key_authentication_extract_auth_key(Req) of
+      undefined ->
+        Req;
+      AuthKey ->
+        [DbName, Key] = key_authentication_parse_auth_key(AuthKey),
+        % db access restiction
+        #httpd{path_parts=[ReqDbName,_]}=Req,
+        case string:equal(ReqDbName, DbName) of
+          false ->
+            throw({unauthorized, <<"invalid key">>});
+          true ->
+            key_authentication_validate_auth_key(Req, DbName, Key)
+          end
+        end.
+
 key_authentication_extract_auth_key(Req) ->
     case couch_httpd:qs_value(Req, "auth_key") of
-    undefined ->
+      undefined ->
         couch_httpd:header_value(Req, "X-Auth-Key");
-    AuthKey ->
+      AuthKey ->
         AuthKey
     end.
 
@@ -526,14 +542,14 @@ key_authentication_parse_auth_key(AuthKey) when is_list(AuthKey) ->
 key_authentication_parse_auth_key(AuthKey) ->
     binary:split(AuthKey, <<",">>).
 
-key_authentication_get_nested_proplist_value(Props, [Key|Keys]) ->
-  case couch_util:get_value(Key, Props, nil) of
-    nil ->
-      missing;
+key_authentication_get_nested_proplist_value(Props, [Key|Keys], Default) ->
+  case couch_util:get_value(Key, Props, missing) of
+    missing ->
+      Default;
     Value ->
-      key_authentication_get_nested_proplist_value(Value, Keys)
+      key_authentication_get_nested_proplist_value(Value, Keys, Default)
   end;
-key_authentication_get_nested_proplist_value(Value, []) -> Value.
+key_authentication_get_nested_proplist_value(Value, [], _) -> Value.
 
 key_authentication_get_auth_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
@@ -541,8 +557,8 @@ key_authentication_get_auth_key(DbName, Key) ->
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
-          case key_authentication_get_nested_proplist_value(Resp, [row, value]) of
-            missing ->
+          case key_authentication_get_nested_proplist_value(Resp, [row, value], not_found) of
+            not_found ->
               nil;
             Value ->
               element(1, Value)
@@ -554,29 +570,8 @@ key_authentication_get_auth_key(DbName, Key) ->
 key_authentication_validate_auth_key(Req, DbName, Key) ->
     case key_authentication_get_auth_key(DbName, Key) of
         nil ->
-            throw({unauthorized, <<"invalid key">>});
+          throw({unauthorized, <<"invalid key">>});
         AuthKeyValue ->
             Roles = couch_util:get_value(<<"roles">>, AuthKeyValue, []),
-            % Req#httpd{user_ctx=#user_ctx{name=?l2b(Key), roles=Roles}}
-            UserCtx=#user_ctx{name=Key, roles=Roles},
-            couch_log:info("key_authentification_validate_auth_key AuthKeyValue ~p Roles ~p UserCtx ~p", [AuthKeyValue, Roles, UserCtx]),
-            Req#httpd{user_ctx=UserCtx}
-    end.
-
-key_authentication_handler(Req) ->
-    case key_authentication_extract_auth_key(Req) of
-    undefined ->
-        Req;
-    AuthKey ->
-        [DbName, Key] = key_authentication_parse_auth_key(AuthKey),
-        % db access restiction
-        #httpd{path_parts=[ReqDbName,_]}=Req,
-        case string:equal(ReqDbName, DbName) of
-        false ->
-            couch_log:notice("key_authentification_handler: trying to access db different from the key ~p vs ~p", [ReqDbName, DbName]),
-            throw({unauthorized, <<"invalid key">>});
-        true ->
-            couch_log:info("key_authentification_handler ReqDbName ~p DbName ~p Key ~p", [ReqDbName, DbName, Key]),
-            key_authentication_validate_auth_key(Req, DbName, Key)
-        end
+            Req#httpd{user_ctx=#user_ctx{name=Key, roles=Roles}}
     end.
