@@ -527,27 +527,31 @@ key_authentification_parse_auth_key(AuthKey) when is_list(AuthKey) ->
 key_authentification_parse_auth_key(AuthKey) ->
     binary:split(AuthKey, <<",">>).
 
+key_authentification_get_nested_proplist_key(Props, [Key|Keys]) ->
+  case couch_util:get_value(Key, Props, nil) of
+    nil -> not_found;
+    Value -> key_authentification_get_nested_proplist_key(Value, Keys)
+  end;
+key_authentification_get_nested_proplist_key(Value, []) -> Value.
+
 key_authentification_get_auth_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
     ViewName = <<"by_key">>,
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
-    case fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
+    try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
         try
-            couch_log:info("key_authentification_get_key Resp ~p", [Resp]),
-            Row = couch_util:get_value(row, Resp, []),
-            couch_log:info("key_authentification_get_key Row ~p", [Row]),
-            Value = couch_util:get_value(value, Row, []),
-            couch_log:info("key_authentification_get_key Value ~p", [Value]),
-            Value1 = element(1, Value),
-            couch_log:info("key_authentification_get_key Value1 ~p", [Value1]),
-            Value1
+          case key_authentification_get_nested_proplist_key(Resp, [row, value]) of
+            KeyData ->
+              element(1, KeyData);
+            not_found ->
+              nil
+          end
         catch
-            _:_ -> nil
-        end;
-    _ ->
-        couch_log:error("key_authentification_get_auth_key error query view ~p/_design/~p/_view/~p", [DbName, DesignName, ViewName]),
-        nil
+          _:_ -> nil
+        end
+    catch
+        _:_ -> nil
     end.
 
 key_authentification_validate_auth_key(Req, DbName, Key) ->
