@@ -526,12 +526,14 @@ key_authentication_parse_auth_key(AuthKey) when is_list(AuthKey) ->
 key_authentication_parse_auth_key(AuthKey) ->
     binary:split(AuthKey, <<",">>).
 
-key_authentication_get_nested_proplist_key(Props, [Key|Keys]) ->
+key_authentication_get_nested_proplist_value(Props, [Key|Keys]) ->
   case couch_util:get_value(Key, Props, nil) of
-    nil -> not_found;
-    Value -> key_authentication_get_nested_proplist_key(Value, Keys)
+    nil ->
+      missing;
+    Value ->
+      key_authentication_get_nested_proplist_value(Value, Keys)
   end;
-key_authentication_get_nested_proplist_key(Value, []) -> Value.
+key_authentication_get_nested_proplist_value(Value, []) -> Value.
 
 key_authentication_get_auth_key(DbName, Key) ->
     DesignName = <<"auth_keys">>,
@@ -539,22 +541,17 @@ key_authentication_get_auth_key(DbName, Key) ->
     QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
     {ok, Resp} ->
-        try
-          case key_authentication_get_nested_proplist_key(Resp, [row, value]) of
-            KeyData ->
-              element(1, KeyData);
-            not_found ->
-              nil
+          case key_authentication_get_nested_proplist_value(Resp, [row, value]) of
+            missing ->
+              nil;
+            Value ->
+              element(1, Value)
           end
-        catch
-          _:_ -> nil
-        end
     catch
         _:_ -> nil
     end.
 
 key_authentication_validate_auth_key(Req, DbName, Key) ->
-    couch_log:info("key_authentification_validate_auth_key DbName ~p Key ~p", [DbName, Key]),
     case key_authentication_get_auth_key(DbName, Key) of
         nil ->
             throw({unauthorized, <<"invalid key">>});
@@ -567,7 +564,6 @@ key_authentication_validate_auth_key(Req, DbName, Key) ->
     end.
 
 key_authentication_handler(Req) ->
-    couch_log:info("key_authentification_handler ~p", [Req]),
     case key_authentication_extract_auth_key(Req) of
     undefined ->
         Req;
