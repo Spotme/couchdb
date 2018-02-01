@@ -360,8 +360,13 @@ changes_enumerator(DocInfo, Acc) ->
         epochs = Epochs
     } = Acc,
     #doc_info{id=Id, high_seq=Seq, revs=[#rev_info{deleted=Del}|_]} = DocInfo,
-    couch_log:info("fabric_rpc.erl changes_enumerator FilterArgs: ~p", [FilterArgs]),
-    case [X || X <- couch_changes:filter(Db, DocInfo, Filter), X /= null] of
+    FilterOptions = case FilterArgs of
+      [] ->
+        Filter;
+      FilterArgs ->
+        erlang:insert_element(5, Filter, FilterArgs)
+      end,
+    case [X || X <- couch_changes:filter(Db, DocInfo, FilterOptions), X /= null] of
     [] ->
         ChangesRow = {no_pass, [
             {pending, Pending-1},

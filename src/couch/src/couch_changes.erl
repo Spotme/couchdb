@@ -290,18 +290,23 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
     end;
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
         when FilterType == view; FilterType == fast_view ->
-    % DbNameShard = fabric:dbname(Db),
-    % DbName = mem3:dbname(DbNameShard),
-    % #doc_info{id=DocId} = DocInfo,
-    % [_, DName] = binary:split(element(2, DDoc), <<"/">>),
-    % Key = <<"a">>,
-    % QArgs = #mrargs{start_key=Key, start_key_docid=DocId, end_key=Key, end_key_docid=DocId, limit=1},
-    % % couch_log:info("couch_changes.erl: filter/3:fast_view ~p/~p ~p", [DDoc, VName, QArgs]),
-    % {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
-    % % couch_log:info("couch_changes.erl: filter/3:fast_view Results ~p", [VResp]),
     Docs = open_revs(Db, DocInfo, Style),
     {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
     filter_revs(Passes, Docs);
+filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
+        when FilterType == view; FilterType == fast_view ->
+  % DbNameShard = fabric:dbname(Db),
+  % DbName = mem3:dbname(DbNameShard),
+  % #doc_info{id=DocId} = DocInfo,
+  % [_, DName] = binary:split(element(2, DDoc), <<"/">>),
+  % Key = <<"a">>,
+  % QArgs = #mrargs{start_key=Key, start_key_docid=DocId, end_key=Key, end_key_docid=DocId, limit=1},
+  % % couch_log:info("couch_changes.erl: filter/3:fast_view ~p/~p ~p", [DDoc, VName, QArgs]),
+  % {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
+  % % couch_log:info("couch_changes.erl: filter/3:fast_view Results ~p", [VResp]),
+  Docs = open_revs(Db, DocInfo, Style),
+  {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
+  filter_revs(Passes, Docs);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
         {json_req, _} -> Req0;
