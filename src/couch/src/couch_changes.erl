@@ -204,7 +204,6 @@ configure_filter("_design", Style, _Req, _Db) ->
     {design_docs, Style};
 configure_filter("_view", Style, Req, Db) ->
     {ViewName, ViewOptions} = get_view_qs(Req),
-    couch_log:info("couch_changes.erl configure_filter ViewOptions: ~p", [ViewOptions]),
     if ViewName /= "" -> ok; true ->
         throw({bad_request, "`view` filter parameter is not provided."})
     end,
