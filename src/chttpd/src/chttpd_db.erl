@@ -82,8 +82,9 @@ handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
 
 handle_changes_req1(#httpd{}=Req, Db) ->
     #changes_args{filter=Raw, style=Style} = Args0 = parse_changes_query(Req),
+    {FilterFun, _} = couch_changes:configure_filter(Raw, Style, Req, Db),
     ChangesArgs = Args0#changes_args{
-        filter_fun = couch_changes:configure_filter(Raw, Style, Req, Db),
+        filter_fun = FilterFun,
         db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
     },
     Max = chttpd:chunked_response_buffer_size(),
