@@ -225,7 +225,12 @@ configure_filter("_view", Style, Req, Db) ->
             case couch_db:is_clustered(Db) of
                 true ->
                     DIR = fabric_util:doc_id_and_rev(DDoc),
-                    {fetch, FilterType, Style, DIR, VName};
+                    case ViewOptions of
+                      nil ->
+                        {{fetch, FilterType, Style, DIR, VName}, nil};
+                      Options ->
+                        {{fetch, FilterType, Style, DIR, VName}, Options}
+                      end;
                 false ->
                     {FilterType, Style, DDoc, VName}
             end;
@@ -336,7 +341,7 @@ get_view_qs(Req) ->
     ViewName = couch_httpd:qs_value(Req, "view", ""),
     case parse_view_options(Query, []) of
       [] ->
-        ViewName;
+        {ViewName, nil};
       ViewOptions ->
         {ViewName, ViewOptions}
       end.
