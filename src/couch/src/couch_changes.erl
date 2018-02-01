@@ -203,7 +203,8 @@ configure_filter("_selector", Style, Req, _Db) ->
 configure_filter("_design", Style, _Req, _Db) ->
     {design_docs, Style};
 configure_filter("_view", Style, Req, Db) ->
-    ViewName = get_view_qs(Req),
+    {ViewName, ViewOptions} = get_view_qs(Req),
+    couch_log:info("couch_changes.erl configure_filter ViewOptions: ~p", [ViewOptions]),
     if ViewName /= "" -> ok; true ->
         throw({bad_request, "`view` filter parameter is not provided."})
     end,
@@ -332,16 +333,12 @@ get_view_qs({json_req, {Props}}) ->
     binary_to_list(couch_util:get_value(<<"view">>, Query, ""));
 get_view_qs(Req) ->
     Query = couch_httpd:qs(Req),
-    couch_log:info("couch_changes.erl ViewQuery: ~p", [Query]),
     ViewName = couch_httpd:qs_value(Req, "view", ""),
-    couch_log:info("couch_changes.erl ViewName: ~p", [ViewName]),
     case parse_view_options(Query, []) of
       [] ->
         ViewName;
       ViewOptions ->
-        couch_log:info("couch_changes.erl ViewOptions: ~p", [ViewOptions]),
-        %Return the same because we have yet to implement an adapter in configure_filter
-        ViewName
+        {ViewName, ViewOptions}
       end.
 
 get_doc_ids({json_req, {Props}}) ->
