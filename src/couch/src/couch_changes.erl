@@ -308,6 +308,7 @@ filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
             _ ->
               lists:map(fun (_) -> true end, Docs)
             end,
+      couch_log:info("couch_changes.erl filter/fast_view Passes: ~p", [Passes]),
       filter_revs(Passes, Docs);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
