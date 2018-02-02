@@ -295,17 +295,27 @@ filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
     filter_revs(Passes, Docs);
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
         when FilterType == view; FilterType == fast_view ->
-  % DbNameShard = fabric:dbname(Db),
-  % DbName = mem3:dbname(DbNameShard),
-  % #doc_info{id=DocId} = DocInfo,
-  % [_, DName] = binary:split(element(2, DDoc), <<"/">>),
-  % Key = <<"a">>,
-  % QArgs = #mrargs{start_key=Key, start_key_docid=DocId, end_key=Key, end_key_docid=DocId, limit=1},
-  % % couch_log:info("couch_changes.erl: filter/3:fast_view ~p/~p ~p", [DDoc, VName, QArgs]),
-  % {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
-  % % couch_log:info("couch_changes.erl: filter/3:fast_view Results ~p", [VResp]),
-  Docs = open_revs(Db, DocInfo, Style),
-  {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
+          DbNameShard = fabric:dbname(Db),
+          DbName = mem3:dbname(DbNameShard),
+          #doc_info{id=DocId} = DocInfo,
+          [_, DName] = binary:split(element(2, DDoc), <<"/">>),
+          QArgs = #mrargs{start_key = couch_util:get_value(start_key, FilterArgs, undefined),
+                          start_key_docid = DocId,
+                          end_key = couch_util:get_value(end_key, FilterArgs, undefined),
+                          end_key_docid = DocId,
+                          limit= couch_util:get_value(limit, FilterArgs, 1)
+                          },
+           {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
+           Docs = open_revs(Db, DocInfo, Style),
+           Passes = case couch_util:get_value(row, VResp, undefined) of
+                              undefined ->
+                                lists:map(fun (_) -> false end, Docs);
+                              _ ->
+                                lists:map(fun (_) -> true end, Docs)
+                              end,
+          couch_log:info("couch_changes.erl: filter/3:fast_view Passes: ~p", [Passes]),
+  %Docs = open_revs(Db, DocInfo, Style),
+  %{ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
   filter_revs(Passes, Docs);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
