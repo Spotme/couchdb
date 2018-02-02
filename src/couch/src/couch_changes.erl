@@ -289,34 +289,26 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
             []
     end;
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
-        when FilterType == view; FilterType == fast_view ->
-    Docs = open_revs(Db, DocInfo, Style),
-    {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
-    filter_revs(Passes, Docs);
+          when FilterType == view; FilterType == fast_view ->
+      Docs = open_revs(Db, DocInfo, Style),
+      {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
+      filter_revs(Passes, Docs);
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
-        when FilterType == view; FilterType == fast_view ->
-          DbNameShard = fabric:dbname(Db),
-          DbName = mem3:dbname(DbNameShard),
-          #doc_info{id=DocId} = DocInfo,
-          [_, DName] = binary:split(element(2, DDoc), <<"/">>),
-          QArgs = #mrargs{start_key = couch_util:get_value(start_key, FilterArgs, undefined),
-                          start_key_docid = DocId,
-                          end_key = couch_util:get_value(end_key, FilterArgs, undefined),
-                          end_key_docid = DocId,
-                          limit= couch_util:get_value(limit, FilterArgs, 1)
-                          },
-           {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
-           Docs = open_revs(Db, DocInfo, Style),
-           Passes = case couch_util:get_value(row, VResp, undefined) of
-                              undefined ->
-                                lists:map(fun (_) -> false end, Docs);
-                              _ ->
-                                lists:map(fun (_) -> true end, Docs)
-                              end,
-          couch_log:info("couch_changes.erl: filter/3:fast_view Passes: ~p", [Passes]),
-  %Docs = open_revs(Db, DocInfo, Style),
-  %{ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
-  filter_revs(Passes, Docs);
+          when FilterType == view; FilterType == fast_view ->
+      DbNameShard = fabric:dbname(Db),
+      DbName = mem3:dbname(DbNameShard),
+      #doc_info{id=DocId} = DocInfo,
+      [_, DName] = binary:split(element(2, DDoc), <<"/">>),
+      QArgs = parse_filter_query_args(FilterArgs, DocId),
+      {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
+      Docs = open_revs(Db, DocInfo, Style),
+      Passes = case couch_util:get_value(row, VResp, undefined) of
+            undefined ->
+              lists:map(fun (_) -> false end, Docs);
+            _ ->
+              lists:map(fun (_) -> true end, Docs)
+            end,
+      filter_revs(Passes, Docs);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
         {json_req, _} -> Req0;
@@ -355,6 +347,21 @@ fast_view_filter(Db, {{Seq, _}, {ID, _, _}}, {fast_view, Style, _, _}) ->
 view_filter(Db, KV, {default, Style}) ->
     apply_view_style(Db, KV, Style).
 
+
+parse_filter_query_args(FilterArgs, DocId) ->
+    #mrargs{
+    start_key = couch_util:get_value(start_key, FilterArgs, undefined),
+    start_key_docid = couch_util:get_value(start_key_docid, FilterArgs, DocId),
+    end_key = couch_util:get_value(end_key, FilterArgs, undefined),
+    end_key_docid = couch_util:get_value(end_key_docid, FilterArgs, DocId),
+    limit= couch_util:get_value(limit, FilterArgs, (#mrargs{})#mrargs.limit),
+    reduce = couch_util:get_value(reduce, FilterArgs, undefined),
+    keys = couch_util:get_value(keys, FilterArgs, undefined),
+    skip = couch_util:get_value(skip, FilterArgs, 0),
+    group = couch_util:get_value(group, FilterArgs, undefined),
+    group_level = couch_util:get_value(group_level, FilterArgs, 0),
+    inclusive_end = couch_util:get_value(inclusive_end, FilterArgs, true)
+    }.
 
 get_view_qs({json_req, {Props}}) ->
     {Query} = couch_util:get_value(<<"query">>, Props, {[]}),
@@ -976,26 +983,11 @@ parse_view_options([{K, V} | Rest], Acc) ->
         <<"end_key">> ->
             [{end_key, parse_json(V)} | Acc];
         <<"endkey_docid">> ->
-            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+            [{end_key_docid, couch_util:to_binary(V)} | Acc];
         <<"end_key_docid">> ->
-            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+            [{end_key_docid, couch_util:to_binary(V)} | Acc];
         <<"limit">> ->
             [{limit, couch_mrview_http:parse_pos_int(V)} | Acc];
-        <<"count">> ->
-            throw({query_parse_error, <<"QS param `count` is not `limit`">>});
-        <<"stale">> when V =:= <<"ok">> orelse V =:= "ok" ->
-            [{stale, ok} | Acc];
-        <<"stale">> when V =:= <<"update_after">> orelse V =:= "update_after" ->
-            [{stale, update_after} | Acc];
-        <<"stale">> ->
-            throw({query_parse_error, <<"Invalid value for `stale`.">>});
-        <<"descending">> ->
-            case couch_mrview_http:parse_boolean(V) of
-                true ->
-                    [{direction, rev} | Acc];
-                _ ->
-                    [{direction, fwd} | Acc]
-            end;
         <<"skip">> ->
             [{skip, couch_mrview_http:parse_pos_int(V)} | Acc];
         <<"group">> ->
