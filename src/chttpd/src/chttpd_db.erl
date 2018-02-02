@@ -82,9 +82,8 @@ handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
 
 handle_changes_req1(#httpd{}=Req, Db) ->
     #changes_args{filter=Raw, style=Style} = Args0 = parse_changes_query(Req),
-    Filter = couch_changes:configure_filter(Raw, Style, Req, Db),
-    case Filter of
-      {FilterFun, ViewArgs} ->
+    case couch_changes:configure_filter(Raw, Style, Req, Db) of
+      {view_filter_options, FilterFun, ViewArgs} ->
         ChangesArgs = Args0#changes_args{
             filter_fun = FilterFun,
             filter_args = ViewArgs,

@@ -226,9 +226,9 @@ configure_filter("_view", Style, Req, Db) ->
                     DIR = fabric_util:doc_id_and_rev(DDoc),
                     case ViewOptions of
                       nil ->
-                        {{fetch, FilterType, Style, DIR, VName}, nil};
+                        {fetch, FilterType, Style, DIR, VName};
                       Options ->
-                        {{fetch, FilterType, Style, DIR, VName}, Options}
+                        {view_filter_options, {fetch, FilterType, Style, DIR, VName}, Options}
                       end;
                 false ->
                     {FilterType, Style, DDoc, VName}
@@ -290,26 +290,25 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
     end;
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
           when FilterType == view; FilterType == fast_view ->
-      Docs = open_revs(Db, DocInfo, Style),
-      {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
-      filter_revs(Passes, Docs);
+    Docs = open_revs(Db, DocInfo, Style),
+    {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
+    filter_revs(Passes, Docs);
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
           when FilterType == view; FilterType == fast_view ->
-      DbNameShard = fabric:dbname(Db),
-      DbName = mem3:dbname(DbNameShard),
-      #doc_info{id=DocId} = DocInfo,
-      [_, DName] = binary:split(element(2, DDoc), <<"/">>),
-      QArgs = parse_filter_query_args(FilterArgs, DocId),
-      {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
-      Docs = open_revs(Db, DocInfo, Style),
-      Passes = case couch_util:get_value(row, VResp, undefined) of
+    DbNameShard = fabric:dbname(Db),
+    DbName = mem3:dbname(DbNameShard),
+    #doc_info{id=DocId} = DocInfo,
+    [_, DName] = binary:split(element(2, DDoc), <<"/">>),
+    QArgs = parse_filter_query_args(FilterArgs, DocId),
+    {ok, VResp} = fabric:query_view(DbName, DName, VName, QArgs),
+    Docs = open_revs(Db, DocInfo, Style),
+    Passes = case couch_util:get_value(row, VResp, undefined) of
             undefined ->
               lists:map(fun (_) -> false end, Docs);
             _ ->
               lists:map(fun (_) -> true end, Docs)
             end,
-      couch_log:info("couch_changes.erl filter/fast_view Passes: ~p", [Passes]),
-      filter_revs(Passes, Docs);
+    filter_revs(Passes, Docs);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
         {json_req, _} -> Req0;
