@@ -1672,12 +1672,43 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
         atts = Atts,
         deleted = Deleted
     },
-    after_doc_read(Db, Doc).
+    DocAfter = after_doc_read(Db, Doc),
+    ok = validate_doc_read(Db, DocAfter),
+    DocAfter.
 
 
 after_doc_read(#db{} = Db, Doc) ->
     DocWithBody = couch_doc:with_ejson_body(Doc),
     couch_db_plugin:after_doc_read(Db, DocWithBody).
+
+validate_doc_read(#db{validate_doc_read_funs=[]}, _Doc) ->
+      ok;
+validate_doc_read(_Db, #doc{id= <<"_local/",_/binary>>}) ->
+      ok;
+validate_doc_read(Db, Doc) ->
+      case catch(check_is_admin(Db)) of
+          ok ->
+              ok;
+          _ ->
+              JsonCtx = couch_util:json_user_ctx(Db),
+              SecObj = get_security(Db),
+              try [case Fun(Doc, JsonCtx, SecObj) of
+                      ok -> ok;
+                      Error -> throw(Error)
+                  end || Fun <- Db#db.validate_doc_read_funs],
+                  ok
+              catch
+                  throw:{forbidden, _}=Error ->
+                      throw(Error);
+                  throw:{unauthorized, _}=Error ->
+                      throw(Error);
+                  throw:{not_found, _}=Error ->
+                      throw(Error);
+                  throw:Error ->
+                      lager:error("Error while validating read: ~p~n", [Error]),
+                      ok
+              end
+    end.
 
 increment_stat(#db{options = Options}, Stat) ->
     case lists:member(sys_db, Options) of

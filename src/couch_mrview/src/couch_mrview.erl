@@ -60,6 +60,7 @@ validate_ddoc_fields(DDoc) ->
         [{<<"shows">>, object}, {any, [object, string]}],
         [{<<"updates">>, object}, {any, [object, string]}],
         [{<<"validate_doc_update">>, string}],
+        [{<<"validate_doc_read">>, string}],
         [{<<"views">>, object}, {<<"lib">>, object}],
         [{<<"views">>, object}, {any, object}, {<<"map">>, MapFuncType}],
         [{<<"views">>, object}, {any, object}, {<<"reduce">>, string}]
