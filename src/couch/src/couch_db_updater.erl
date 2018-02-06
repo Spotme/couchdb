@@ -651,20 +651,24 @@ close_db(#db{fd_monitor = Ref}) ->
 
 refresh_validate_doc_funs(#db{name = <<"shards/", _/binary>> = Name} = Db) ->
     spawn(fabric, reset_validation_funs, [mem3:dbname(Name)]),
-    Db#db{validate_doc_funs = undefined};
+    Db#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined};
 refresh_validate_doc_funs(Db0) ->
     Db = Db0#db{user_ctx=?ADMIN_USER},
     {ok, DesignDocs} = couch_db:get_design_docs(Db),
-    ProcessDocFuns = lists:flatmap(
+    {ProcessDocFuns, ReadFuns} = lists:flatmap(
         fun(DesignDocInfo) ->
-            {ok, DesignDoc} = couch_db:open_doc_int(
-                Db, DesignDocInfo, [ejson_body]),
-            case couch_doc:get_validate_doc_fun(DesignDoc) of
-            nil -> [];
-            Fun -> [Fun]
-            end
-        end, DesignDocs),
-    Db#db{validate_doc_funs=ProcessDocFuns}.
+            {ok, DesignDoc} = couch_db:open_doc_int( Db, DesignDocInfo, [ejson_body]),
+            UAcc1 = case couch_doc:get_validate_doc_fun(DesignDoc) of
+                nil -> [];
+                Fun -> [Fun]
+            end,
+            RAcc1 = case couch_doc:get_validate_read_doc_fun(DesignDoc) of
+                nil -> [];
+                Fun1 -> [Fun1]
+            end,
+            {UAcc1, RAcc1}
+        end, {[],[]}, DesignDocs),
+    Db#db{validate_doc_funs=ProcessDocFuns, validate_doc_read_funs=ReadFuns}.
 
 % rev tree functions
 
