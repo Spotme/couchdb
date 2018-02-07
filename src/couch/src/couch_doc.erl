@@ -400,9 +400,9 @@ get_validate_doc_fun(#doc{body={Props}}=DDoc) ->
         end
     end.
 
-
+get_validate_read_doc_fun({Props}) ->
+      get_validate_read_doc_fun(couch_doc:from_json_obj({Props}));
 get_validate_read_doc_fun(#doc{body={Props}}=DDoc) ->
-    ?LOG_INFO(["get validate doc read", DDoc]),
     case couch_util:get_value(<<"validate_doc_read">>, Props) of
       undefined ->
         nil;
