@@ -74,7 +74,10 @@ init({DbName, Filepath, Fd, Options}) ->
     % we don't load validation funs here because the fabric query is liable to
     % race conditions.  Instead see couch_db:validate_doc_update, which loads
     % them lazily
-    {ok, Db#db{main_pid = self()}, idle_limit()}.
+    % TODO: Fix
+    %As a temporary workaround for validate_doc_read will load funs here
+    Db2 = refresh_validate_doc_funs(Db),
+    {ok, Db2#db{main_pid = self()}, idle_limit()}.
 
 
 terminate(_Reason, Db) ->
@@ -655,20 +658,19 @@ refresh_validate_doc_funs(#db{name = <<"shards/", _/binary>> = Name} = Db) ->
 refresh_validate_doc_funs(Db0) ->
     Db = Db0#db{user_ctx=?ADMIN_USER},
     {ok, DesignDocs} = couch_db:get_design_docs(Db),
-    {ProcessDocFuns, ReadFuns} = lists:flatmap(
-        fun(DesignDocInfo) ->
-            {ok, DesignDoc} = couch_db:open_doc_int( Db, DesignDocInfo, [ejson_body]),
-            UAcc1 = case couch_doc:get_validate_doc_fun(DesignDoc) of
-                nil -> [];
-                Fun -> [Fun]
-            end,
-            RAcc1 = case couch_doc:get_validate_read_doc_fun(DesignDoc) of
-                nil -> [];
-                Fun1 -> [Fun1]
-            end,
-            {UAcc1, RAcc1}
-        end, {[],[]}, DesignDocs),
-    Db#db{validate_doc_funs=ProcessDocFuns, validate_doc_read_funs=ReadFuns}.
+    {UpdateFuns, ReadFuns} = lists:foldl(fun(DesignDocInfo, {UpdFunsAcc, RFunsAcc}) ->
+      {ok, DesignDoc} = couch_db:open_doc_int(Db, DesignDocInfo, [ejson_body]),
+      UFuns = case couch_doc:get_validate_doc_fun(DesignDoc) of
+        nil -> UpdFunsAcc;
+        UFun -> [UFun|UpdFunsAcc]
+      end,
+      RFuns = case couch_doc:get_validate_read_doc_fun(DesignDoc) of
+        nil -> RFunsAcc;
+        RFun -> [RFun|RFunsAcc]
+      end,
+      {UFuns, RFuns} end, {[], []}, DesignDocs),
+
+    Db#db{validate_doc_funs=UpdateFuns,validate_doc_read_funs=ReadFuns}.
 
 % rev tree functions
 

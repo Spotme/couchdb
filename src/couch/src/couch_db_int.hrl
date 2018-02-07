@@ -25,7 +25,7 @@
     name,
     filepath,
     validate_doc_funs = undefined,
-    validate_doc_read_funs = [],
+    validate_doc_read_funs = undefined,
     security = [],
     security_ptr = nil,
     user_ctx = #user_ctx{},
