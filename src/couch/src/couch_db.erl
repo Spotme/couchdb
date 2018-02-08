@@ -760,8 +760,13 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         {internal_repl, _} ->
             ok;
         _ ->
-            validate_doc_read(Db, Doc),
-            validate_doc_update_int(Db, Doc, GetDiskDocFun)
+            case Db#db.should_validate_doc_update of
+              true ->
+                validate_doc_read(Db, Doc),
+                validate_doc_update_int(Db, Doc, GetDiskDocFun);
+              false ->
+                validate_doc_read(Db, Doc)
+            end
     end.
 
 validate_ddoc(DbName, DDoc) ->
@@ -1679,9 +1684,13 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
         deleted = Deleted
     },
     DocAfter = after_doc_read(Db, Doc),
-    % TODO: Investigate crash
-    %{UpdateFuns, ReadFuns} = load_validation_funs(Db),
-    %ok = validate_doc_read(Db#db{validate_doc_funs=UpdateFuns, validate_doc_read_funs=ReadFuns}, DocAfter);
+    case Db#db.should_load_validate_doc_read_funs of
+      true ->
+        validate_doc_update(Db#db{should_load_validate_doc_read_funs=false,
+                                  should_validate_doc_update=false}, DocAfter, fun() -> nil end);
+      false ->
+        ok
+    end,
     DocAfter.
 
 
