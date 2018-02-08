@@ -324,8 +324,8 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
         couch_stats:increment_counter([couchdb, query_server, vdu_rejects], 1)
     end,
     case Resp of
-        1 ->
-            ok;
+        Val when is_atom(Val); is_number(Val) ->
+          ok;
         {[{<<"forbidden">>, Message}]} ->
             throw({forbidden, Message});
         {[{<<"unauthorized">>, Message}]} ->
@@ -336,12 +336,13 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
             throw({unknown_error, Message})
     end.
 
+% use the function stored in ddoc.validate_doc_read to test a doc read.
 validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
       JsonDoc = couch_doc:to_json_obj(Doc, [revs]),
       case ddoc_prompt(DDoc, [<<"validate_doc_read">>],
                        [JsonDoc, Ctx, SecObj]) of
-          1 ->
-              ok;
+          Val when is_atom(Val); is_number(Val) ->
+            ok;
           {[{<<"forbidden">>, Message}]} ->
               throw({forbidden, Message});
           {[{<<"unauthorized">>, Message}]} ->
