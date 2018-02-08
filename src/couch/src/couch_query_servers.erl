@@ -337,7 +337,6 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
     end.
 
 validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
-      ?LOG_INFO(["doc_read", DDoc]),
       JsonDoc = couch_doc:to_json_obj(Doc, [revs]),
       case ddoc_prompt(DDoc, [<<"validate_doc_read">>],
                        [JsonDoc, Ctx, SecObj]) of
