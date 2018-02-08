@@ -74,10 +74,7 @@ init({DbName, Filepath, Fd, Options}) ->
     % we don't load validation funs here because the fabric query is liable to
     % race conditions.  Instead see couch_db:validate_doc_update, which loads
     % them lazily
-    % TODO: Fix
-    %As a temporary workaround for validate_doc_read will load funs here
-    Db2 = refresh_validate_doc_funs(Db),
-    {ok, Db2#db{main_pid = self()}, idle_limit()}.
+    {ok, Db#db{main_pid = self()}, idle_limit()}.
 
 
 terminate(_Reason, Db) ->
@@ -210,8 +207,8 @@ handle_call({purge_docs, IdRevs}, _From, Db) ->
         idle_limit()}.
 
 
-handle_cast({load_validation_funs, ValidationFuns}, Db) ->
-    Db2 = Db#db{validate_doc_funs = ValidationFuns},
+handle_cast({load_validation_funs, {ValidationFuns, ReadValidationFuns}}, Db) ->
+    Db2 = Db#db{validate_doc_funs = ValidationFuns, validate_doc_read_funs=ReadValidationFuns},
     ok = gen_server:call(couch_server, {db_updated, Db2}, infinity),
     {noreply, Db2, idle_limit()};
 handle_cast(start_compact, Db) ->
@@ -654,7 +651,7 @@ close_db(#db{fd_monitor = Ref}) ->
 
 refresh_validate_doc_funs(#db{name = <<"shards/", _/binary>> = Name} = Db) ->
     spawn(fabric, reset_validation_funs, [mem3:dbname(Name)]),
-    Db#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined};
+    Db#db{validate_doc_funs = undefined, validate_doc_read_funs = []};
 refresh_validate_doc_funs(Db0) ->
     Db = Db0#db{user_ctx=?ADMIN_USER},
     {ok, DesignDocs} = couch_db:get_design_docs(Db),
