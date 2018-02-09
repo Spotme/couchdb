@@ -762,7 +762,6 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         _ ->
             case Db#db.should_validate_doc_update of
               true ->
-                validate_doc_read(Db, Doc),
                 validate_doc_update_int(Db, Doc, GetDiskDocFun);
               false ->
                 validate_doc_read(Db, Doc)

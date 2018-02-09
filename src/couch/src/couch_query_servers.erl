@@ -336,11 +336,19 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
             throw({unknown_error, Message})
     end.
 
+
+% use the function stored in ddoc.validate_doc_read to test a doc read.
+-spec validate_doc_read(DDoc, Doc, Ctx, SecObj) -> ok when
+        DDoc    :: ddoc(),
+        Doc     :: doc(),
+        Ctx     :: user_ctx(),
+        SecObj  :: sec_obj().
+
 validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
       JsonDoc = couch_doc:to_json_obj(Doc, [revs]),
       case ddoc_prompt(DDoc, [<<"validate_doc_read">>],
                        [JsonDoc, Ctx, SecObj]) of
-          1 ->
+          RespCode when RespCode == 1; RespCode == ok; RespCode == true  ->
               ok;
           {[{<<"forbidden">>, Message}]} ->
               throw({forbidden, Message});
