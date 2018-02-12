@@ -12,6 +12,7 @@
 
 -module(couch_httpd_auth).
 -include_lib("couch/include/couch_db.hrl").
+-include_lib("couch_mrview/include/couch_mrview.hrl").
 
 -export([party_mode_handler/1]).
 
@@ -20,6 +21,7 @@
 -export([cookie_authentication_handler/1, cookie_authentication_handler/2]).
 -export([null_authentication_handler/1]).
 -export([proxy_authentication_handler/1, proxy_authentification_handler/1]).
+-export([key_authentication_handler/1]).
 -export([cookie_auth_header/2]).
 -export([handle_session_req/1, handle_session_req/2]).
 
@@ -506,3 +508,76 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
     Peer = Req:get(peer),
     couch_log:warning("~p: Authentication failed for user ~s from ~s",
         [?MODULE, User, Peer]).
+
+%% ------------------------------------------------------------------
+%% x-auth-key handler
+%% ------------------------------------------------------------------
+key_authentication_handler(Req) ->
+    case key_authentication_extract_auth_key(Req) of
+      undefined ->
+        Req;
+      AuthKey ->
+        [DbName, Key] = key_authentication_parse_auth_key(AuthKey),
+				ReqDbName = case Req#httpd.path_parts of
+					[] ->
+						throw({unauthorized, <<"invalid key">>});
+					[Name|_] ->
+						Name;
+					undefined ->
+						throw({unauthorized, <<"invalid key">>})
+				end,
+
+        case string:equal(ReqDbName, DbName) of
+          false ->
+            throw({unauthorized, <<"invalid key">>});
+          true ->
+            key_authentication_validate_auth_key(Req, DbName, Key)
+          end
+        end.
+
+key_authentication_extract_auth_key(Req) ->
+    case couch_httpd:qs_value(Req, "auth_key") of
+      undefined ->
+        couch_httpd:header_value(Req, "X-Auth-Key");
+      AuthKey ->
+        AuthKey
+    end.
+
+key_authentication_parse_auth_key(AuthKey) when is_list(AuthKey) ->
+    key_authentication_parse_auth_key(?l2b(AuthKey));
+key_authentication_parse_auth_key(AuthKey) ->
+    binary:split(AuthKey, <<",">>).
+
+key_authentication_get_nested_proplist_value(Props, [Key|Keys], Default) ->
+  case couch_util:get_value(Key, Props, missing) of
+    missing ->
+      Default;
+    Value ->
+      key_authentication_get_nested_proplist_value(Value, Keys, Default)
+  end;
+key_authentication_get_nested_proplist_value(Value, [], _) -> Value.
+
+key_authentication_get_auth_key(DbName, Key) ->
+    DesignName = <<"auth_keys">>,
+    ViewName = <<"by_key">>,
+    QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1},
+    try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
+    {ok, Resp} ->
+          case key_authentication_get_nested_proplist_value(Resp, [row, value], not_found) of
+            not_found ->
+              nil;
+            Value ->
+              element(1, Value)
+          end
+    catch
+        _:_ -> nil
+    end.
+
+key_authentication_validate_auth_key(Req, DbName, Key) ->
+    case key_authentication_get_auth_key(DbName, Key) of
+        nil ->
+          throw({unauthorized, <<"invalid key">>});
+        AuthKeyValue ->
+            Roles = couch_util:get_value(<<"roles">>, AuthKeyValue, []),
+            Req#httpd{user_ctx=#user_ctx{name=Key, roles=Roles}}
+    end.
