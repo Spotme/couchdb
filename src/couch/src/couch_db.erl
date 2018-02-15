@@ -748,7 +748,7 @@ validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDoc
         ok -> validate_ddoc(Db#db.name, Doc);
         Error -> Error
     end;
-validate_doc_update(#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined} = Db, Doc, Fun) ->
+validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
     {ValidationFuns, ReadValidationFuns} = load_validation_funs(Db),
     validate_doc_update(Db#db{validate_doc_funs=ValidationFuns, validate_doc_read_funs=ReadValidationFuns}, Doc, Fun);
 validate_doc_update(#db{validate_doc_funs=[], validate_doc_read_funs=[]}, _Doc, _GetDiskDocFun) ->
@@ -760,12 +760,22 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         {internal_repl, _} ->
             ok;
         _ ->
-            case Db#db.should_validate_doc_update of
-              true ->
-                validate_doc_update_int(Db, Doc, GetDiskDocFun);
-              false ->
-                validate_doc_read(Db, Doc)
-            end
+          case Db#db.should_validate_doc_update of
+            true ->
+              case Db#db.validate_doc_funs of
+                [] ->
+                  ok;
+                 _ ->
+                  validate_doc_update_int(Db, Doc, GetDiskDocFun)
+              end;
+            false ->
+              case Db#db.validate_doc_read_funs of
+                [] ->
+                  ok;
+                _ ->
+                  validate_doc_read(Db, Doc)
+              end
+          end
     end.
 
 validate_ddoc(DbName, DDoc) ->
