@@ -25,7 +25,7 @@
     name,
     filepath,
     validate_doc_funs = undefined,
-    validate_doc_read_funs = [],
+    validate_doc_read_funs = undefined,
     should_load_validate_doc_read_funs = true,
     should_validate_doc_update = true,
     security = [],

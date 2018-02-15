@@ -748,7 +748,7 @@ validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDoc
         ok -> validate_ddoc(Db#db.name, Doc);
         Error -> Error
     end;
-validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
+validate_doc_update(#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined} = Db, Doc, Fun) ->
     {ValidationFuns, ReadValidationFuns} = load_validation_funs(Db),
     validate_doc_update(Db#db{validate_doc_funs=ValidationFuns, validate_doc_read_funs=ReadValidationFuns}, Doc, Fun);
 validate_doc_update(#db{validate_doc_funs=[], validate_doc_read_funs=[]}, _Doc, _GetDiskDocFun) ->
@@ -796,8 +796,19 @@ validate_doc_update_int(Db, Doc, GetDiskDocFun) ->
                 Error
         end
     end,
-    couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
-                                 Fun).
+    case catch(check_is_admin(Db)) of
+        ok ->
+            case is_system_db(Db) of
+              true ->
+                couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
+                                       Fun);
+              false ->
+                 ok
+            end;
+        _ ->
+          couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
+                                 Fun)
+        end.
 
 
 % to be safe, spawn a middleman here
