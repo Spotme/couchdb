@@ -1706,12 +1706,23 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
     DocAfter = after_doc_read(Db, Doc),
     case Db#db.should_load_validate_doc_read_funs of
       true ->
-        validate_doc_update(Db#db{should_load_validate_doc_read_funs=false,
-                                  should_validate_doc_update=false}, DocAfter, fun() -> nil end);
+        case validate_doc_update(Db#db{should_load_validate_doc_read_funs=false,
+                                       should_validate_doc_update=false},
+                                 DocAfter, fun() -> nil end) of
+              {Error, Reason} ->
+                DocPlaceholder = #doc{
+                    id = Id,
+                    revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
+                    body = {[{Error, Reason}]},
+                    deleted = Deleted
+                },
+                after_doc_read(Db, DocPlaceholder);
+              _ ->
+                DocAfter
+        end;
       false ->
-        ok
-    end,
-    DocAfter.
+        DocAfter
+    end.
 
 
 after_doc_read(#db{} = Db, Doc) ->
@@ -1735,12 +1746,12 @@ validate_doc_read(Db, Doc) ->
                   end || Fun <- Db#db.validate_doc_read_funs],
                   ok
               catch
-                  throw:{forbidden, _}=Error ->
-                      throw(Error);
-                  throw:{unauthorized, _}=Error ->
-                      throw(Error);
-                  throw:{not_found, _}=Error ->
-                      throw(Error);
+                  throw:{forbidden, _} ->
+                      {forbidden, invalid_key};
+                  throw:{unauthorized, _} ->
+                      {unauthorized, invalid_key};
+                  throw:{not_found, _} ->
+                      {not_found, not_found};
                   throw:Error ->
                       lager:error("Error while validating read: ~p~n", [Error]),
                       ok
