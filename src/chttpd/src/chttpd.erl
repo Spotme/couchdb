@@ -738,8 +738,14 @@ send_json(Req, Code, Value) ->
     send_json(Req, Code, [], Value).
 
 send_json(Req, Code, Headers0, Value) ->
+    {Resp, RCode} = case Value of
+      {[_, _, {validate_doc_read_error, forbidden}, {Error, Reason}]} ->
+        {{[{Error, Reason}]}, 403};
+      Response ->
+        {Response, Code}
+    end,
     Headers1 = [timing(), reqid() | Headers0],
-    couch_httpd:send_json(Req, Code, Headers1, Value).
+    couch_httpd:send_json(Req, RCode, Headers1, Resp).
 
 start_json_response(Req, Code) ->
     start_json_response(Req, Code, []).

@@ -1713,7 +1713,7 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
                 DocPlaceholder = #doc{
                     id = Id,
                     revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
-                    body = {[{Error, Reason}]},
+                    body = {[{validate_doc_read_error, forbidden}, {Error, Reason}]},
                     deleted = Deleted
                 },
                 after_doc_read(Db, DocPlaceholder);
@@ -1746,15 +1746,15 @@ validate_doc_read(Db, Doc) ->
                   end || Fun <- Db#db.validate_doc_read_funs],
                   ok
               catch
-                  throw:{forbidden, _} ->
-                      {forbidden, invalid_key};
-                  throw:{unauthorized, _} ->
-                      {unauthorized, invalid_key};
-                  throw:{not_found, _} ->
-                      {not_found, not_found};
+                  throw:{forbidden, _}=Error ->
+                    Error;
+                  throw:{unauthorized, _}=Error ->
+                    Error;
+                  throw:{not_found, _}=Error ->
+                    Error;
                   throw:Error ->
-                      lager:error("Error while validating read: ~p~n", [Error]),
-                      ok
+                    lager:error("Error while validating read: ~p~n", [Error]),
+                    ok
               end
     end.
 
