@@ -324,7 +324,7 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
         couch_stats:increment_counter([couchdb, query_server, vdu_rejects], 1)
     end,
     case Resp of
-        RespCode when RespCode == 1; RespCode == ok; RespCode == true ->
+        RespCode when RespCode =:= 1; RespCode =:= ok; RespCode =:= true ->
             ok;
         {[{<<"forbidden">>, Message}]} ->
             throw({forbidden, Message});
@@ -348,7 +348,7 @@ validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
       JsonDoc = couch_doc:to_json_obj(Doc, [revs]),
       case ddoc_prompt(DDoc, [<<"validate_doc_read">>],
                        [JsonDoc, Ctx, SecObj]) of
-          RespCode when RespCode == 1; RespCode == ok; RespCode == true  ->
+          RespCode when RespCode =:= 1; RespCode =:= ok; RespCode =:= true  ->
               ok;
           {[{<<"forbidden">>, Message}]} ->
               throw({forbidden, Message});
