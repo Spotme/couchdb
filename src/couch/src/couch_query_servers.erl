@@ -353,7 +353,11 @@ validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
           {[{<<"forbidden">>, Message}]} ->
               throw({forbidden, Message});
           {[{<<"unauthorized">>, Message}]} ->
-              throw({unauthorized, Message})
+              throw({unauthorized, Message});
+          {[{_, Message}]} ->
+              throw({unknown_error, Message});
+          Message when is_binary(Message) ->
+              throw({unknown_error, Message})
       end.
 
 rewrite(Req, Db, DDoc) ->

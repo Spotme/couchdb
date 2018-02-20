@@ -1750,10 +1750,11 @@ validate_doc_read(Db, Doc) ->
                     Error;
                   throw:{unauthorized, _}=Error ->
                     Error;
-                  throw:{not_found, _}=Error ->
+                  throw:{unknown_error, _}=Error ->
                     Error;
                   throw:Error ->
-                    lager:error("Error while validating read: ~p~n", [Error]),
+                    couch_log:warning("validate_doc_read failed with unknown error: ~p",
+                                      [Error]),
                     ok
               end
     end.
