@@ -206,12 +206,8 @@ handle_call({purge_docs, IdRevs}, _From, Db) ->
     {reply, {ok, couch_db_header:purge_seq(NewHeader), IdRevsPurged}, Db2,
         idle_limit()}.
 
-handle_cast({load_validation_funs, undefined}, Db) ->
-    Db2 = Db#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined},
-    ok = gen_server:call(couch_server, {db_updated, Db2}, infinity),
-    {noreply, Db2, idle_limit()};
-handle_cast({load_validation_funs, ValidationFuns}, Db) ->
-    Db2 = Db#db{validate_doc_funs = ValidationFuns},
+handle_cast({load_validation_funs, {UpdValidationFuns, ReadValidationFuns}}, Db) ->
+    Db2 = Db#db{validate_doc_funs = UpdValidationFuns, validate_doc_read_funs = ReadValidationFuns},
     ok = gen_server:call(couch_server, {db_updated, Db2}, infinity),
     {noreply, Db2, idle_limit()};
 handle_cast(start_compact, Db) ->

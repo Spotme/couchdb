@@ -812,9 +812,9 @@ load_validation_funs(#db{main_pid=Pid, name = <<"shards/", _/binary>>}=Db) ->
         exit(ddoc_cache:open(mem3:dbname(Db#db.name), validation_funs))
     end),
     receive
-        {'DOWN', Ref, _, _, {ok, Funs}} ->
-            gen_server:cast(Pid, {load_validation_funs, Funs}),
-            Funs;
+        {'DOWN', Ref, _, _, {ok, {UpdFuns, RFuns}}} ->
+            gen_server:cast(Pid, {load_validation_funs, {UpdFuns, RFuns}}),
+            {UpdFuns, RFuns};
         {'DOWN', Ref, _, _, Reason} ->
             couch_log:error("could not load validation funs ~p", [Reason]),
             throw(internal_server_error)
@@ -827,14 +827,19 @@ load_validation_funs(#db{main_pid=Pid}=Db) ->
             Doc
     end,
     DDocs = lists:map(OpenDocs, DDocInfos),
-    Funs = lists:flatmap(fun(DDoc) ->
-        case couch_doc:get_validate_doc_fun(DDoc) of
-            nil -> [];
-            Fun -> [Fun]
-        end
-    end, DDocs),
-    gen_server:cast(Pid, {load_validation_funs, Funs}),
-    Funs.
+    {UpdateFuns, ReadFuns} = lists:foldl(fun(DDoc, {UpdFunsAcc, RFunsAcc}) ->
+      UFuns = case couch_doc:get_validate_doc_fun(DDoc) of
+        nil -> UpdFunsAcc;
+        UFun -> [UFun|UpdFunsAcc]
+      end,
+      RFuns = case couch_doc:get_validate_read_doc_fun(DDoc) of
+        nil -> RFunsAcc;
+        RFun -> [RFun|RFunsAcc]
+      end,
+      {UFuns, RFuns} end, {[], []}, DDocs),
+    gen_server:cast(Pid, {load_validation_funs, {UpdateFuns, ReadFuns}}),
+    {UpdateFuns, ReadFuns}.
+
 
 prep_and_validate_update(Db, #doc{id=Id,revs={RevStart, Revs}}=Doc,
         OldFullDocInfo, LeafRevsDict, AllowConflict) ->
