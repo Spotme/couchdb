@@ -27,7 +27,6 @@
     validate_doc_funs = undefined,
     validate_doc_read_funs = undefined,
     should_load_validate_doc_read_funs = true,
-    should_validate_doc_update = true,
     security = [],
     security_ptr = nil,
     user_ctx = #user_ctx{},

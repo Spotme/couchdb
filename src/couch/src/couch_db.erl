@@ -744,14 +744,9 @@ group_alike_docs([Doc|Rest], [Bucket|RestBuckets]) ->
     end.
 
 validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDocFun) ->
-    case Db#db.should_validate_doc_update of
-      true ->
-        case catch check_is_admin(Db) of
-          ok -> validate_ddoc(Db#db.name, Doc);
-          Error -> Error
-        end;
-      false ->
-        ok
+    case catch check_is_admin(Db) of
+        ok -> validate_ddoc(Db#db.name, Doc);
+        Error -> Error
     end;
 validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
     {ValidationFuns, ReadValidationFuns} = load_validation_funs(Db),
@@ -765,22 +760,7 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         {internal_repl, _} ->
             ok;
         _ ->
-          case Db#db.should_validate_doc_update of
-            true ->
-              case Db#db.validate_doc_funs of
-                [] ->
-                  ok;
-                 _ ->
-                  validate_doc_update_int(Db, Doc, GetDiskDocFun)
-              end;
-            false ->
-              case Db#db.validate_doc_read_funs of
-                [] ->
-                  ok;
-                _ ->
-                  validate_doc_read(Db, Doc)
-              end
-          end
+            validate_doc_update_int(Db, Doc, GetDiskDocFun)
     end.
 
 validate_ddoc(DbName, DDoc) ->
@@ -1709,32 +1689,41 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
         deleted = Deleted
     },
     DocAfter = after_doc_read(Db, Doc),
-    case Db#db.should_load_validate_doc_read_funs of
-      true ->
-        case validate_doc_update(Db#db{should_load_validate_doc_read_funs=false,
-                                       should_validate_doc_update=false},
-                                 DocAfter, fun() -> nil end) of
-              {Error, Reason} ->
-                DocPlaceholder = #doc{
-                    id = Id,
-                    revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
-                    body = {[{validate_doc_read_error, forbidden}, {Error, Reason}]},
-                    deleted = Deleted
-                },
-                after_doc_read(Db, DocPlaceholder);
-              _ ->
-                DocAfter
-        end;
-      false ->
-        DocAfter
-    end.
+    prep_validate_doc_read(Db, Id, Deleted, {Pos, Revs}, DocAfter).
 
 
 after_doc_read(#db{} = Db, Doc) ->
     DocWithBody = couch_doc:with_ejson_body(Doc),
     couch_db_plugin:after_doc_read(Db, DocWithBody).
 
+prep_validate_doc_read(#db{revs_limit=RevsLimit}=Db, Id, Deleted, {Pos, Revs}, DocAfter) ->
+    case lists:member(<<"_admin">>, Db#db.user_ctx#user_ctx.roles) of
+      true ->
+        DocAfter;
+      false ->
+        if Db#db.should_load_validate_doc_read_funs =:= true ->
+              Db2 = Db#db{should_load_validate_doc_read_funs=false},
+              {_, RFuns} = load_validation_funs(Db2),
+              case validate_doc_read(Db#db{validate_doc_read_funs=RFuns}, DocAfter) of
+                  {Error, Reason} ->
+                    DocPlaceholder = #doc{
+                        id = Id,
+                        revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
+                        body = {[{validate_doc_read_error, forbidden}, {Error, Reason}]},
+                        deleted = Deleted
+                    },
+                    after_doc_read(Db, DocPlaceholder);
+                  ok ->
+                    DocAfter
+              end;
+           true ->
+              DocAfter
+        end
+    end.
+
 validate_doc_read(#db{validate_doc_read_funs=[]}, _Doc) ->
+      ok;
+validate_doc_read(#db{validate_doc_read_funs=undefined}, _Doc) ->
       ok;
 validate_doc_read(_Db, #doc{id= <<"_local/",_/binary>>}) ->
       ok;
