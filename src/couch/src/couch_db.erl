@@ -749,9 +749,9 @@ validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDoc
         Error -> Error
     end;
 validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
-    {UpdValidationFuns, ReadValidationFuns} = load_validation_funs(Db),
-    validate_doc_update(Db#db{validate_doc_funs=UpdValidationFuns, validate_doc_read_funs=ReadValidationFuns}, Doc, Fun);
-validate_doc_update(#db{validate_doc_funs=[], validate_doc_read_funs=[]}, _Doc, _GetDiskDocFun) ->
+    {ValidationFuns, _} = load_validation_funs(Db),
+    validate_doc_update(Db#db{validate_doc_funs=ValidationFuns}, Doc, Fun);
+validate_doc_update(#db{validate_doc_funs=[]}, _Doc, _GetDiskDocFun) ->
     ok;
 validate_doc_update(_Db, #doc{id= <<"_local/",_/binary>>}, _GetDiskDocFun) ->
     ok;
