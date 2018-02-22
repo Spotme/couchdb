@@ -791,8 +791,19 @@ validate_doc_update_int(Db, Doc, GetDiskDocFun) ->
                 Error
         end
     end,
-    couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
-                                 Fun).
+    case catch(check_is_admin(Db)) of
+        ok ->
+            case is_system_db(Db) of
+              true ->
+                couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
+                                       Fun);
+              false ->
+                 ok
+            end;
+        _ ->
+          couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
+                                 Fun)
+    end.
 
 
 % to be safe, spawn a middleman here
