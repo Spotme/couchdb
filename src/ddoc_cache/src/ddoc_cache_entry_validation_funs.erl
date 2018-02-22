@@ -31,13 +31,17 @@ ddocid(_) ->
 
 recover(DbName) ->
     {ok, DDocs} = fabric:design_docs(mem3:dbname(DbName)),
-    Funs = lists:flatmap(fun(DDoc) ->
-        case couch_doc:get_validate_doc_fun(DDoc) of
-            nil -> [];
-            Fun -> [Fun]
-        end
-    end, DDocs),
-    {ok, Funs}.
+    {UpdateFuns, ReadFuns} = lists:foldl(fun(DDoc, {UpdFunsAcc, RFunsAcc}) ->
+      UFuns = case couch_doc:get_validate_doc_fun(DDoc) of
+        nil -> UpdFunsAcc;
+        UFun -> [UFun|UpdFunsAcc]
+      end,
+      RFuns = case couch_doc:get_validate_read_doc_fun(DDoc) of
+        nil -> RFunsAcc;
+        RFun -> [RFun|RFunsAcc]
+      end,
+      {UFuns, RFuns} end, {[], []}, DDocs),
+    {ok, {UpdateFuns, ReadFuns}}.
 
 
 insert(_, _) ->

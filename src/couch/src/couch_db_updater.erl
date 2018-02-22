@@ -206,7 +206,10 @@ handle_call({purge_docs, IdRevs}, _From, Db) ->
     {reply, {ok, couch_db_header:purge_seq(NewHeader), IdRevsPurged}, Db2,
         idle_limit()}.
 
-
+handle_cast({load_validation_funs, undefined}, Db) ->
+    Db2 = Db#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined},
+    ok = gen_server:call(couch_server, {db_updated, Db2}, infinity),
+    {noreply, Db2, idle_limit()};
 handle_cast({load_validation_funs, ValidationFuns}, Db) ->
     Db2 = Db#db{validate_doc_funs = ValidationFuns},
     ok = gen_server:call(couch_server, {db_updated, Db2}, infinity),
@@ -651,20 +654,23 @@ close_db(#db{fd_monitor = Ref}) ->
 
 refresh_validate_doc_funs(#db{name = <<"shards/", _/binary>> = Name} = Db) ->
     spawn(fabric, reset_validation_funs, [mem3:dbname(Name)]),
-    Db#db{validate_doc_funs = undefined};
+    Db#db{validate_doc_funs = undefined, validate_doc_read_funs = undefined};
 refresh_validate_doc_funs(Db0) ->
     Db = Db0#db{user_ctx=?ADMIN_USER},
     {ok, DesignDocs} = couch_db:get_design_docs(Db),
-    ProcessDocFuns = lists:flatmap(
-        fun(DesignDocInfo) ->
-            {ok, DesignDoc} = couch_db:open_doc_int(
-                Db, DesignDocInfo, [ejson_body]),
-            case couch_doc:get_validate_doc_fun(DesignDoc) of
-            nil -> [];
-            Fun -> [Fun]
-            end
-        end, DesignDocs),
-    Db#db{validate_doc_funs=ProcessDocFuns}.
+    {UpdateFuns, ReadFuns} = lists:foldl(fun(DesignDocInfo, {UpdFunsAcc, RFunsAcc}) ->
+      {ok, DesignDoc} = couch_db:open_doc_int(Db, DesignDocInfo, [ejson_body]),
+      UFuns = case couch_doc:get_validate_doc_fun(DesignDoc) of
+        nil -> UpdFunsAcc;
+        UFun -> [UFun|UpdFunsAcc]
+      end,
+      RFuns = case couch_doc:get_validate_read_doc_fun(DesignDoc) of
+        nil -> RFunsAcc;
+        RFun -> [RFun|RFunsAcc]
+      end,
+      {UFuns, RFuns} end, {[], []}, DesignDocs),
+
+    Db#db{validate_doc_funs=UpdateFuns,validate_doc_read_funs=ReadFuns}.
 
 % rev tree functions
 

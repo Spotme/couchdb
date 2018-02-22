@@ -749,9 +749,9 @@ validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDoc
         Error -> Error
     end;
 validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
-    ValidationFuns = load_validation_funs(Db),
-    validate_doc_update(Db#db{validate_doc_funs=ValidationFuns}, Doc, Fun);
-validate_doc_update(#db{validate_doc_funs=[]}, _Doc, _GetDiskDocFun) ->
+    {UpdValidationFuns, ReadValidationFuns} = load_validation_funs(Db),
+    validate_doc_update(Db#db{validate_doc_funs=UpdValidationFuns, validate_doc_read_funs=ReadValidationFuns}, Doc, Fun);
+validate_doc_update(#db{validate_doc_funs=[], validate_doc_read_funs=[]}, _Doc, _GetDiskDocFun) ->
     ok;
 validate_doc_update(_Db, #doc{id= <<"_local/",_/binary>>}, _GetDiskDocFun) ->
     ok;
@@ -1672,12 +1672,72 @@ make_doc(#db{fd=Fd, revs_limit=RevsLimit}=Db, Id, Deleted, Bp, {Pos, Revs}) ->
         atts = Atts,
         deleted = Deleted
     },
-    after_doc_read(Db, Doc).
+    DocAfter = after_doc_read(Db, Doc),
+    prep_and_validate_read(Db, Id, Deleted, {Pos, Revs}, DocAfter).
 
 
 after_doc_read(#db{} = Db, Doc) ->
     DocWithBody = couch_doc:with_ejson_body(Doc),
     couch_db_plugin:after_doc_read(Db, DocWithBody).
+
+
+prep_and_validate_read(#db{revs_limit=RevsLimit}=Db, Id, Deleted, {Pos, Revs}, DocAfter) ->
+    case lists:member(<<"_admin">>, Db#db.user_ctx#user_ctx.roles) of
+      true ->
+        DocAfter;
+      false ->
+        if Db#db.should_load_validate_doc_read_funs =:= true ->
+              Db2 = Db#db{should_load_validate_doc_read_funs=false},
+              {_, RFuns} = load_validation_funs(Db2),
+              case validate_doc_read(Db#db{validate_doc_read_funs=RFuns}, DocAfter) of
+                  {Error, Reason} ->
+                    DocPlaceholder = #doc{
+                        id = Id,
+                        revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
+                        body = {[{validate_doc_read_error, forbidden}, {Error, Reason}]},
+                        deleted = Deleted
+                    },
+                    after_doc_read(Db, DocPlaceholder);
+                  ok ->
+                    DocAfter
+              end;
+           true ->
+              DocAfter
+        end
+    end.
+
+validate_doc_read(#db{validate_doc_read_funs=[]}, _Doc) ->
+    ok;
+validate_doc_read(#db{validate_doc_read_funs=undefined}, _Doc) ->
+    ok;
+validate_doc_read(_Db, #doc{id= <<"_local/",_/binary>>}) ->
+    ok;
+validate_doc_read(Db, Doc) ->
+    case catch(check_is_admin(Db)) of
+        ok ->
+            ok;
+        _ ->
+            JsonCtx = couch_util:json_user_ctx(Db),
+            SecObj = get_security(Db),
+            try [case Fun(Doc, JsonCtx, SecObj) of
+                    ok -> ok;
+                    Error -> throw(Error)
+                end || Fun <- Db#db.validate_doc_read_funs],
+                ok
+            catch
+                throw:{forbidden, _}=Error ->
+                  Error;
+                throw:{unauthorized, _}=Error ->
+                  Error;
+                throw:{unknown_error, _}=Error ->
+                  Error;
+                throw:Error ->
+                  couch_log:warning("validate_doc_read failed with unknown error: ~p",
+                                    [Error]),
+                  ok
+            end
+    end.
+
 
 increment_stat(#db{options = Options}, Stat) ->
     case lists:member(sys_db, Options) of
