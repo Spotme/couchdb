@@ -458,7 +458,8 @@ db_req(#httpd{path_parts=[_,<<"_bulk_docs">>]}=Req, _Db) ->
     send_method_not_allowed(Req, "POST");
 
 
-db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>]}=Req, Db) ->
+db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
+                             mochi_req=MochiReq}=Req, Db) ->
     couch_stats:increment_counter([couchdb, httpd, bulk_requests]),
     couch_httpd:validate_ctype(Req, "application/json"),
     {JsonProps} = chttpd:json_body_obj(Req),
@@ -469,19 +470,61 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>]}=Req, Db) ->
             #doc_query_args{
                 options = Options
             } = bulk_get_parse_doc_query(Req),
+            % Decide whether to use multipart response or a standard application/json
+            AcceptMixedMp = MochiReq:accepts_content_type("multipart/mixed"),
+            AcceptRelatedMp = MochiReq:accepts_content_type("multipart/related"),
+            AcceptMp = AcceptMixedMp orelse AcceptRelatedMp,
 
-            {ok, Resp} = start_json_response(Req, 200),
-            send_chunk(Resp, <<"{\"results\": [">>),
+            {Resp, Boundary} = case AcceptMp of
+               false ->
+                  {ok, Resp1} = start_json_response(Req, 200),
+                  send_chunk(Resp1, <<"{\"results\": [">>),
+                  {Resp1, nil};
+               true ->
+                  ?LOG_INFO("Start _bulk_get multipart response"),
+                  Boundary1 = couch_httpd:boundary(),
+                  MpType = case AcceptMixedMp of
+                     true -> "multipart/mixed";
+                     _ ->  "multipart/related"
+                  end,
+                  CType = {"Content-Type", MpType ++ "; boundary=\"" ++
+                          ?b2l(Boundary1) ++  "\""},
+                  {ok, Resp1} = couch_httpd:start_chunked_response(Req, 200,
+                                                                  [CType]),
+                  {Resp1, Boundary1}
+            end,
 
-            lists:foldl(fun(Doc, Sep) ->
-                {DocId, Results, Options1} = bulk_get_open_doc_revs(Db, Doc,
-                                                                    Options),
-                bulk_get_send_docs_json(Resp, DocId, Results, Options1, Sep),
-                <<",">>
-            end, <<"">>, Docs),
+            case Boundary of
+               nil ->
+                   lists:foldl(fun(Doc, Sep) ->
+                       {DocId, Results, Options1} = bulk_get_open_doc_revs(Db, Doc,
+                                                                           Options),
+                       bulk_get_send_docs_json(Resp, DocId, Results, Options1, Sep),
+                       <<",">>
+                   end, <<"">>, Docs),
 
-            send_chunk(Resp, <<"]}">>),
-            end_json_response(Resp)
+                   send_chunk(Resp, <<"]}">>),
+                   end_json_response(Resp);
+               _ ->
+                   lists:foldl(fun(Doc, Pre) ->
+                               {_, Results, Options1} = bulk_get_open_doc_revs(Db, Doc, Options),
+                               case Results of
+                                   [] ->
+                                     Pre;
+                                   _ ->
+                                     ?LOG_INFO("send_docs_multipart for _bulk_get"),
+                                     send_docs_multipart(Req, Results, Options1)
+                               end
+                       end, <<"">>, Docs),
+                   %% send the end of the multipart if needed
+                   case Docs of
+                       [] -> ok;
+                       _Else ->
+                           Eof = couch_httpd:mp_eof(Boundary),
+                           send_chunk(Resp, <<"\r\n", Eof/binary >>)
+                   end,
+                   couch_httpd:last_chunk(Resp)
+            end
     end;
 db_req(#httpd{path_parts=[_, <<"_bulk_get">>]}=Req, _Db) ->
     send_method_not_allowed(Req, "POST");

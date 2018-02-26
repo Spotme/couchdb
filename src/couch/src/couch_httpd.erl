@@ -34,6 +34,7 @@
 -export([validate_host/1]).
 -export([validate_bind_address/1]).
 -export([check_max_request_length/1]).
+-export([mp_eof/1, boundary/0]).
 
 
 -define(HANDLER_NAME_IN_MODULE_POS, 6).
@@ -448,6 +449,14 @@ validate_ctype(Req, Ctype) ->
         end
     end.
 
+-spec boundary() -> binary().
+boundary() ->
+      Unique = couch_uuids:random(),
+      <<"---------------------------", Unique/binary>>.
+
+-spec mp_eof(binary()) -> binary().
+mp_eof(Boundary) ->
+    <<"--",  Boundary/binary, "--\r\n">>.
 
 check_max_request_length(Req) ->
     Len = list_to_integer(header_value(Req, "Content-Length", "0")),
