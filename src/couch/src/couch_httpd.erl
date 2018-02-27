@@ -34,7 +34,7 @@
 -export([validate_host/1]).
 -export([validate_bind_address/1]).
 -export([check_max_request_length/1]).
--export([mp_eof/1, boundary/0]).
+-export([mp_eof/1, boundary/0, mp_to_binary/1, mp_to_list/1, mp_make_header/2, mp_make_header/3, mp_header_value/2, join/2]).
 
 
 -define(HANDLER_NAME_IN_MODULE_POS, 6).
@@ -457,6 +457,58 @@ boundary() ->
 -spec mp_eof(binary()) -> binary().
 mp_eof(Boundary) ->
     <<"--",  Boundary/binary, "--\r\n">>.
+
+mp_make_header(Name, Value) ->
+  Value1 = if is_binary(Value) -> Value;
+              true -> mp_to_binary(Value)
+           end,
+  << Name/binary, ": ", Value1/binary >>.
+
+mp_make_header(Name, Value, Params) ->
+  Value1 = header_value(mp_to_binary(Value), Params),
+  << Name/binary, ": ", Value1/binary >>.
+
+mp_header_value(Value, Params) when is_list(Value) ->
+  mp_header_value(list_to_binary(Value), Params);
+mp_header_value(Value, Params) ->
+  Params1 = lists:foldl(fun({K, V}, Acc) ->
+    K1 = mp_to_binary(K),
+    V1 = mp_to_binary(V),
+    ParamStr = << K1/binary, "=", V1/binary  >>,
+    [ParamStr | Acc]
+                        end, [], Params),
+  join([Value] ++ lists:reverse(Params1), "; ").
+
+mp_to_binary(Headers) when is_list(Headers) ->
+  HeadersList = lists:foldl(fun
+                              ({Name, Value}, Acc) ->
+                                [mp_make_header(Name, Value) | Acc];
+                              ({Name, Value, Params}, Acc) ->
+                                [mp_make_header(Name, Value, Params) | Acc]
+                            end, [], Headers),
+  iolist_to_binary([
+    join(lists:reverse(HeadersList), <<"\r\n">>),
+    <<"\r\n\r\n">>]);
+mp_to_binary(Headers) ->
+  mp_to_binary(mp_to_list(Headers)).
+
+mp_to_list(Headers) ->
+  lists:reverse(dict:fold(fun(_K, KV, Acc) -> [KV | Acc] end, [], Headers)).
+
+join([], _Separator) ->
+  <<>>;
+join([S], _separator) ->
+  S;
+join(L, Separator) ->
+  iolist_to_binary(join(lists:reverse(L), Separator, [])).
+
+join([], _Separator, Acc) ->
+  Acc;
+join([S | Rest], Separator, []) ->
+  join(Rest, Separator, [S]);
+join([S | Rest], Separator, Acc) ->
+  join(Rest, Separator, [S, Separator | Acc]).
+
 
 check_max_request_length(Req) ->
     Len = list_to_integer(header_value(Req, "Content-Length", "0")),

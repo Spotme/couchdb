@@ -506,14 +506,10 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                    end_json_response(Resp);
                _ ->
                    lists:foldl(fun(Doc, Pre) ->
-                               {_, Results, Options1} = bulk_get_open_doc_revs(Db, Doc, Options),
-                               case Results of
-                                   [] ->
-                                     Pre;
-                                   _ ->
-                                     send_docs_multipart(Req, Results, Options1)
-                               end
-                       end, <<"">>, Docs),
+                               {DocId, Results, Options1} = bulk_get_open_doc_revs(Db, Doc, Options),
+                               send_docs_multipart_boundary(Resp, Pre, DocId, Results,
+                                                            Boundary, Options1)
+                               end, <<"">>, Docs),
                    %% send the end of the multipart if needed
                    case Docs of
                        [] -> ok;
@@ -929,8 +925,8 @@ send_doc_efficiently(#httpd{mochi_req=MochiReq}=Req, #doc{atts=Atts}=Doc, Header
 
 send_docs_multipart(Req, {ok, Results}, Options1) ->
     send_docs_multipart(Req, Results, Options1);
-send_docs_multipart(Req, {error, Results}, Options1) ->
-    send_docs_multipart(Req, Results, Options1);
+send_docs_multipart(Req, {error, _}, Options1) ->
+    send_docs_multipart(Req, [], Options1);
 send_docs_multipart(Req, Results, Options1) ->
     ?LOG_INFO("Start sending docs [multipart]"),
     OuterBoundary = couch_uuids:random(),
@@ -966,6 +962,138 @@ send_docs_multipart(Req, Results, Options1) ->
          end, Results),
     couch_httpd:send_chunk(Resp, <<"--">>),
     couch_httpd:last_chunk(Resp).
+
+send_docs_multipart_boundary(_Resp, _Pre, _DocId, {ok, []}, _OuterBoundary, _Options0) ->
+    ok;
+send_docs_multipart_boundary(Resp, Pre, DocId, {ok, Results}, OuterBoundary, Options0) ->
+    send_docs_multipart_boundary(Resp, Pre, DocId, Results, OuterBoundary, Options0);
+send_docs_multipart_boundary(Resp, Pre, DocId, {error, _}, OuterBoundary, Options0) ->
+    send_docs_multipart_boundary(Resp, Pre, DocId, [], OuterBoundary, Options0);
+send_docs_multipart_boundary(Resp, Pre, DocId, Results, OuterBoundary, Options0) ->
+    Options = [attachments, follows, att_encoding_info | Options0],
+    lists:foldl(fun
+            ({ok, #doc{atts=[]}=Doc}, Pre1) ->
+                JsonBytes = ?JSON_ENCODE(couch_doc:to_json_obj(Doc, Options)),
+                Headers = [{<<"Content-Type">>, <<"application/json">>}],
+                Part = part(JsonBytes, Headers, OuterBoundary),
+                couch_httpd:send_chunk(Resp, << Pre1/binary, Part/binary >>),
+                <<"\r\n">>;
+            ({ok, #doc{id=Id, revs=Revs, atts=Atts}=Doc}, Pre1) ->
+                %% create inner binary
+                InnerBoundary = couch_httpd:boundary(),
+
+                %% start the related part, we first send the json
+                JsonBytes = ?JSON_ENCODE(couch_doc:to_json_obj(Doc, Options)),
+                Headers = mp_header(Revs, Id, InnerBoundary),
+                BinHeaders = couch_httpd:mp_to_binary(Headers),
+                Bin = <<Pre1/binary, "--", OuterBoundary/binary, "\r\n", BinHeaders/binary >>,
+                couch_httpd:send_chunk(Resp, Bin),
+
+                %% send doc part
+                JsonHeaders = [{<<"Content-Type">>, <<"application/json">>}],
+                DocPart = part(JsonBytes, JsonHeaders, InnerBoundary),
+                couch_httpd:send_chunk(Resp, DocPart),
+
+                %% send attachments
+                {ok, _} = atts_to_mp(Atts, InnerBoundary,
+                                fun(Data) ->
+                                        couch_httpd:send_chunk(Resp, Data)
+                                end),
+                <<"\r\n">>;
+            ({{not_found, missing}, RevId}, Pre1) ->
+                RevStr = couch_doc:rev_to_str(RevId),
+                Body = {[{<<"id">>, DocId},
+                         {<<"error">>, <<"not_found">>},
+                         {<<"reason">>, <<"missing">>},
+                         {<<"status">>, 400},
+                         {<<"missing">>, RevStr}]},
+                Json = ?JSON_ENCODE(Body),
+
+                Headers = [{<<"Content-Type">>, <<"application/json">>}],
+                Part = part(Json, Headers, OuterBoundary),
+                couch_httpd:send_chunk(Resp, <<Pre1/binary, Part/binary >>),
+                 <<"\r\n">>
+        end, Pre, Results).
+
+%% Multipart helpers
+part(Content, Headers, Boundary) ->
+    BinHeaders = couch_httpd:mp_to_binary(Headers),
+    <<"--", Boundary/binary, "\r\n", BinHeaders/binary, Content/binary >>.
+
+mp_header({0, []}, Id, Boundary) ->
+    [{<<"X-Doc-Id">>, Id},
+     {<<"Content-Type">>, <<"multipart/related; boundary=",
+                            Boundary/binary >>}];
+mp_header({Start, [FirstRevId|_]}, Id, Boundary) ->
+    RevStr = couch_doc:rev_to_str({Start, FirstRevId}),
+    [{<<"X-Doc-Id">>, Id},
+     {<<"X-Rev-Id">>, RevStr},
+     {<<"Content-Type">>, <<"multipart/related; boundary=",
+                            Boundary/binary >>}].
+
+atts_to_mp([], Boundary, WriteFun) ->
+    Eof = couch_httpd:mp_eof(Boundary),
+    WriteFun(<<"\r\n", Eof/binary>>);
+atts_to_mp([Hd|RestAtts] = Atts, Boundary, WriteFun) ->
+    case couch_att:is_stub(Hd) of
+      true ->
+        if RestAtts =/= [] ->
+          atts_to_mp_int(RestAtts, Boundary, WriteFun);
+        true ->
+          atts_to_mp([], Boundary, WriteFun)
+        end;
+      false ->
+        if Atts =/= [] ->
+          atts_to_mp_int(Atts, Boundary, WriteFun);
+        true ->
+          atts_to_mp([], Boundary, WriteFun)
+        end
+    end.
+
+atts_to_mp_int([Att | RestAtts], Boundary, WriteFun)  ->
+    Name = couch_att:fetch(name, Att),
+    AttLen = couch_att:fetch(att_len, Att),
+    Type = couch_att:fetch(type, Att),
+    Encoding = couch_att:fetch(encoding, Att),
+
+    % write headers
+    LengthBin = list_to_binary(integer_to_list(AttLen)),
+    WriteFun(<<"\r\n--", Boundary/binary>>),
+    WriteFun(<<"\r\nContent-Disposition: attachment; filename=\"", Name/binary, "\"">>),
+    WriteFun(<<"\r\nContent-Type: ", Type/binary>>),
+    WriteFun(<<"\r\nContent-Length: ", LengthBin/binary>>),
+    case Encoding of
+        identity ->
+            ok;
+        _ ->
+            EncodingBin = atom_to_binary(Encoding, latin1),
+            WriteFun(<<"\r\nContent-Encoding: ", EncodingBin/binary>>)
+    end,
+
+    % write data
+    WriteFun(<<"\r\n\r\n">>),
+    att_foldl(Att, fun(Data, _) -> WriteFun(Data) end, ok),
+    atts_to_mp(RestAtts, Boundary, WriteFun).
+
+att_foldl(Att, Fun, Acc) ->
+    case couch_att:fetch(data, Att) of
+      DataFun when is_function(DataFun) ->
+        Len = couch_att:fetch(att_len, Att),
+        fold_streamed_data(DataFun, Len, Fun, Acc);
+      Bin when is_binary(Bin) ->
+        Fun(Bin, Acc);
+      {Fd, Sp} ->
+        Md5 = couch_att:fetch(md5, Att),
+        couch_stream:foldl(Fd, Sp, Md5, Fun, Acc)
+    end.
+
+fold_streamed_data(_RcvFun, 0, _Fun, Acc) ->
+    Acc;
+fold_streamed_data(RcvFun, LenLeft, Fun, Acc) when LenLeft > 0->
+    Bin = RcvFun(),
+    ResultAcc = Fun(Bin, Acc),
+    fold_streamed_data(RcvFun, LenLeft - size(Bin), Fun, ResultAcc).
+
 
 receive_request_data(Req) ->
     receive_request_data(Req, chttpd:body_length(Req)).
