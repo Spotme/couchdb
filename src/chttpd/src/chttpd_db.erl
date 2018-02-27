@@ -481,7 +481,6 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                   send_chunk(Resp1, <<"{\"results\": [">>),
                   {Resp1, nil};
                true ->
-                  ?LOG_INFO("Start _bulk_get multipart response"),
                   Boundary1 = couch_httpd:boundary(),
                   MpType = case AcceptMixedMp of
                      true -> "multipart/mixed";
@@ -512,7 +511,6 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                                    [] ->
                                      Pre;
                                    _ ->
-                                     ?LOG_INFO("send_docs_multipart for _bulk_get"),
                                      send_docs_multipart(Req, Results, Options1)
                                end
                        end, <<"">>, Docs),
@@ -929,7 +927,12 @@ send_doc_efficiently(#httpd{mochi_req=MochiReq}=Req, #doc{atts=Atts}=Doc, Header
         send_json(Req, 200, Headers, couch_doc:to_json_obj(Doc, Options))
     end.
 
+send_docs_multipart(Req, {ok, Results}, Options1) ->
+    send_docs_multipart(Req, Results, Options1);
+send_docs_multipart(Req, {error, Results}, Options1) ->
+    send_docs_multipart(Req, Results, Options1);
 send_docs_multipart(Req, Results, Options1) ->
+    ?LOG_INFO("Start sending docs [multipart]"),
     OuterBoundary = couch_uuids:random(),
     InnerBoundary = couch_uuids:random(),
     Options = [attachments, follows, att_encoding_info | Options1],
