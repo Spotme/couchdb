@@ -34,7 +34,8 @@
 -export([validate_host/1]).
 -export([validate_bind_address/1]).
 -export([check_max_request_length/1]).
--export([mp_eof/1, boundary/0, mp_to_binary/1, mp_to_list/1, mp_make_header/2, mp_make_header/3, mp_header_value/2, join/2]).
+-export([mp_eof/1, mp_boundary/0, mp_to_binary/1, mp_to_list/1]).
+-export([mp_make_header/2, mp_make_header/3, mp_header_value/2, mp_join/2]).
 
 
 -define(HANDLER_NAME_IN_MODULE_POS, 6).
@@ -449,8 +450,8 @@ validate_ctype(Req, Ctype) ->
         end
     end.
 
--spec boundary() -> binary().
-boundary() ->
+-spec mp_boundary() -> binary().
+mp_boundary() ->
       Unique = couch_uuids:random(),
       <<"---------------------------", Unique/binary>>.
 
@@ -465,7 +466,7 @@ mp_make_header(Name, Value) ->
   << Name/binary, ": ", Value1/binary >>.
 
 mp_make_header(Name, Value, Params) ->
-  Value1 = header_value(mp_to_binary(Value), Params),
+  Value1 = mp_header_value(mp_to_binary(Value), Params),
   << Name/binary, ": ", Value1/binary >>.
 
 mp_header_value(Value, Params) when is_list(Value) ->
@@ -477,7 +478,7 @@ mp_header_value(Value, Params) ->
     ParamStr = << K1/binary, "=", V1/binary  >>,
     [ParamStr | Acc]
                         end, [], Params),
-  join([Value] ++ lists:reverse(Params1), "; ").
+  mp_join([Value] ++ lists:reverse(Params1), "; ").
 
 mp_to_binary(Headers) when is_list(Headers) ->
   HeadersList = lists:foldl(fun
@@ -487,7 +488,7 @@ mp_to_binary(Headers) when is_list(Headers) ->
                                 [mp_make_header(Name, Value, Params) | Acc]
                             end, [], Headers),
   iolist_to_binary([
-    join(lists:reverse(HeadersList), <<"\r\n">>),
+    mp_join(lists:reverse(HeadersList), <<"\r\n">>),
     <<"\r\n\r\n">>]);
 mp_to_binary(Headers) ->
   mp_to_binary(mp_to_list(Headers)).
@@ -495,19 +496,19 @@ mp_to_binary(Headers) ->
 mp_to_list(Headers) ->
   lists:reverse(dict:fold(fun(_K, KV, Acc) -> [KV | Acc] end, [], Headers)).
 
-join([], _Separator) ->
+mp_join([], _Separator) ->
   <<>>;
-join([S], _separator) ->
+mp_join([S], _separator) ->
   S;
-join(L, Separator) ->
-  iolist_to_binary(join(lists:reverse(L), Separator, [])).
+mp_join(L, Separator) ->
+  iolist_to_binary(mp_join(lists:reverse(L), Separator, [])).
 
-join([], _Separator, Acc) ->
+mp_join([], _Separator, Acc) ->
   Acc;
-join([S | Rest], Separator, []) ->
-  join(Rest, Separator, [S]);
-join([S | Rest], Separator, Acc) ->
-  join(Rest, Separator, [S, Separator | Acc]).
+mp_join([S | Rest], Separator, []) ->
+  mp_join(Rest, Separator, [S]);
+mp_join([S | Rest], Separator, Acc) ->
+  mp_join(Rest, Separator, [S, Separator | Acc]).
 
 
 check_max_request_length(Req) ->

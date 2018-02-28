@@ -481,7 +481,7 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                   send_chunk(Resp1, <<"{\"results\": [">>),
                   {Resp1, nil};
                true ->
-                  Boundary1 = couch_httpd:boundary(),
+                  Boundary1 = couch_httpd:mp_boundary(),
                   MpType = case AcceptMixedMp of
                      true -> "multipart/mixed";
                      _ ->  "multipart/related"
@@ -507,8 +507,7 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                _ ->
                    lists:foldl(fun(Doc, Pre) ->
                                {DocId, Results, Options1} = bulk_get_open_doc_revs(Db, Doc, Options),
-                               send_docs_multipart_boundary(Resp, Pre, DocId, Results,
-                                                            Boundary, Options1)
+                               send_doc_multipart(Resp, Pre, DocId, Results, Boundary, Options1)
                                end, <<"">>, Docs),
                    %% send the end of the multipart if needed
                    case Docs of
@@ -923,12 +922,7 @@ send_doc_efficiently(#httpd{mochi_req=MochiReq}=Req, #doc{atts=Atts}=Doc, Header
         send_json(Req, 200, Headers, couch_doc:to_json_obj(Doc, Options))
     end.
 
-send_docs_multipart(Req, {ok, Results}, Options1) ->
-    send_docs_multipart(Req, Results, Options1);
-send_docs_multipart(Req, {error, _}, Options1) ->
-    send_docs_multipart(Req, [], Options1);
 send_docs_multipart(Req, Results, Options1) ->
-    ?LOG_INFO("Start sending docs [multipart]"),
     OuterBoundary = couch_uuids:random(),
     InnerBoundary = couch_uuids:random(),
     Options = [attachments, follows, att_encoding_info | Options1],
@@ -963,13 +957,14 @@ send_docs_multipart(Req, Results, Options1) ->
     couch_httpd:send_chunk(Resp, <<"--">>),
     couch_httpd:last_chunk(Resp).
 
-send_docs_multipart_boundary(_Resp, _Pre, _DocId, {ok, []}, _OuterBoundary, _Options0) ->
+send_doc_multipart(Resp, _Pre, DocId, {error, {Rev, Error, Reason}}, _OuterBoundary, _Options0) ->
+  send_chunk(Resp, [bulk_get_json_error(DocId, Rev, Error, Reason)]);
+send_doc_multipart(_Resp, _Pre, _DocId, {ok, []}, _OuterBoundary, _Options0) ->
     ok;
-send_docs_multipart_boundary(Resp, Pre, DocId, {ok, Results}, OuterBoundary, Options0) ->
-    send_docs_multipart_boundary(Resp, Pre, DocId, Results, OuterBoundary, Options0);
-send_docs_multipart_boundary(Resp, Pre, DocId, {error, _}, OuterBoundary, Options0) ->
-    send_docs_multipart_boundary(Resp, Pre, DocId, [], OuterBoundary, Options0);
-send_docs_multipart_boundary(Resp, Pre, DocId, Results, OuterBoundary, Options0) ->
+send_doc_multipart(Resp, Pre, DocId, {ok, Results}, OuterBoundary, Options0) ->
+    send_doc_multipart1(Resp, Pre, DocId, Results, OuterBoundary, Options0).
+
+send_doc_multipart1(Resp, Pre, DocId, Results, OuterBoundary, Options0) ->
     Options = [attachments, follows, att_encoding_info | Options0],
     lists:foldl(fun
             ({ok, #doc{atts=[]}=Doc}, Pre1) ->
@@ -980,7 +975,7 @@ send_docs_multipart_boundary(Resp, Pre, DocId, Results, OuterBoundary, Options0)
                 <<"\r\n">>;
             ({ok, #doc{id=Id, revs=Revs, atts=Atts}=Doc}, Pre1) ->
                 %% create inner binary
-                InnerBoundary = couch_httpd:boundary(),
+                InnerBoundary = couch_httpd:mp_boundary(),
 
                 %% start the related part, we first send the json
                 JsonBytes = ?JSON_ENCODE(couch_doc:to_json_obj(Doc, Options)),
