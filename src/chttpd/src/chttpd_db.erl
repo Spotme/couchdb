@@ -974,22 +974,15 @@ send_doc_multipart1(Resp, Pre, DocId, Results, OuterBoundary, Options0) ->
                 couch_httpd:send_chunk(Resp, << Pre1/binary, Part/binary >>),
                 <<"\r\n">>;
             ({ok, #doc{id=Id, revs=Revs, atts=Atts}=Doc}, Pre1) ->
-                %% create inner binary
                 InnerBoundary = couch_httpd:mp_boundary(),
-
-                %% start the related part, we first send the json
                 JsonBytes = ?JSON_ENCODE(couch_doc:to_json_obj(Doc, Options)),
                 Headers = mp_header(Revs, Id, InnerBoundary),
                 BinHeaders = couch_httpd:mp_to_binary(Headers),
                 Bin = <<Pre1/binary, "--", OuterBoundary/binary, "\r\n", BinHeaders/binary >>,
                 couch_httpd:send_chunk(Resp, Bin),
-
-                %% send doc part
                 JsonHeaders = [{<<"Content-Type">>, <<"application/json">>}],
                 DocPart = part(JsonBytes, JsonHeaders, InnerBoundary),
                 couch_httpd:send_chunk(Resp, DocPart),
-
-                %% send attachments
                 {ok, _} = atts_to_mp(Atts, InnerBoundary,
                                 fun(Data) ->
                                         couch_httpd:send_chunk(Resp, Data)
@@ -1050,8 +1043,6 @@ atts_to_mp_int([Att | RestAtts], Boundary, WriteFun)  ->
     AttLen = couch_att:fetch(att_len, Att),
     Type = couch_att:fetch(type, Att),
     Encoding = couch_att:fetch(encoding, Att),
-
-    % write headers
     LengthBin = list_to_binary(integer_to_list(AttLen)),
     WriteFun(<<"\r\n--", Boundary/binary>>),
     WriteFun(<<"\r\nContent-Disposition: attachment; filename=\"", Name/binary, "\"">>),
@@ -1064,8 +1055,6 @@ atts_to_mp_int([Att | RestAtts], Boundary, WriteFun)  ->
             EncodingBin = atom_to_binary(Encoding, latin1),
             WriteFun(<<"\r\nContent-Encoding: ", EncodingBin/binary>>)
     end,
-
-    % write data
     WriteFun(<<"\r\n\r\n">>),
     att_foldl(Att, fun(Data, _) -> WriteFun(Data) end, ok),
     atts_to_mp(RestAtts, Boundary, WriteFun).

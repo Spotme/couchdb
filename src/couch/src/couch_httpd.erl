@@ -450,6 +450,19 @@ validate_ctype(Req, Ctype) ->
         end
     end.
 
+check_max_request_length(Req) ->
+    Len = list_to_integer(header_value(Req, "Content-Length", "0")),
+    MaxLen = config:get_integer("httpd", "max_http_request_size", 4294967296),
+    case Len > MaxLen of
+        true ->
+            exit({body_too_large, Len});
+        false ->
+            ok
+    end.
+
+
+% Utilities
+
 -spec mp_boundary() -> binary().
 mp_boundary() ->
       Unique = couch_uuids:random(),
@@ -509,20 +522,6 @@ mp_join([S | Rest], Separator, []) ->
   mp_join(Rest, Separator, [S]);
 mp_join([S | Rest], Separator, Acc) ->
   mp_join(Rest, Separator, [S, Separator | Acc]).
-
-
-check_max_request_length(Req) ->
-    Len = list_to_integer(header_value(Req, "Content-Length", "0")),
-    MaxLen = config:get_integer("httpd", "max_http_request_size", 4294967296),
-    case Len > MaxLen of
-        true ->
-            exit({body_too_large, Len});
-        false ->
-            ok
-    end.
-
-
-% Utilities
 
 partition(Path) ->
     mochiweb_util:partition(Path, "/").
