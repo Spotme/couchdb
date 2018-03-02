@@ -957,10 +957,20 @@ send_docs_multipart(Req, Results, Options1) ->
     couch_httpd:send_chunk(Resp, <<"--">>),
     couch_httpd:last_chunk(Resp).
 
-send_doc_multipart(Resp, _Pre, DocId, {error, {Rev, Error, Reason}}, _OuterBoundary, _Options0) ->
-  send_chunk(Resp, [bulk_get_json_error(DocId, Rev, Error, Reason)]);
-send_doc_multipart(_Resp, _Pre, _DocId, {ok, []}, _OuterBoundary, _Options0) ->
-    ok;
+send_doc_multipart(Resp, _Pre, DocId, {error, {_Rev, Error, Reason}}, OuterBoundary, _Options0) ->
+    Body = {[{<<"id">>, DocId},
+             {<<"error">>, Error},
+             {<<"reason">>, Reason},
+             {<<"status">>, 400}]},
+    Json = ?JSON_ENCODE(Body),
+    Headers = [{<<"Content-Type">>, <<"application/json">>}],
+    Part = part(Json, Headers, OuterBoundary),
+    couch_httpd:send_chunk(Resp, <<"\r\n", Part/binary>>);
+send_doc_multipart(Resp, _Pre, DocId, {ok, []}, OuterBoundary, _Options0) ->
+    JsonBytes = ?JSON_ENCODE({[{<<"id">>, DocId}]}),
+    Headers = [{<<"Content-Type">>, <<"application/json">>}],
+    Part = part(JsonBytes, Headers, OuterBoundary),
+    couch_httpd:send_chunk(Resp, <<"\r\n", Part/binary>>);
 send_doc_multipart(Resp, Pre, DocId, {ok, Results}, OuterBoundary, Options0) ->
     send_doc_multipart1(Resp, Pre, DocId, Results, OuterBoundary, Options0).
 
