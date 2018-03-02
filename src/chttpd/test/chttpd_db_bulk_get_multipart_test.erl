@@ -77,26 +77,16 @@ should_get_doc_with_all_revs(Pid) ->
     DocId = <<"docudoc">>,
     Req = fake_request(DocId),
 
-    RevA = {[{<<"_id">>, DocId}, {<<"_rev">>, <<"1-ABC">>}]},
-    RevB = {[{<<"_id">>, DocId}, {<<"_rev">>, <<"1-CDE">>}]},
     DocRevA = #doc{id = DocId, body = {[{<<"_rev">>, <<"1-ABC">>}]}},
     DocRevB = #doc{id = DocId, body = {[{<<"_rev">>, <<"1-CDE">>}]}},
 
     mock_open_revs(all, {ok, [{ok, DocRevA}, {ok, DocRevB}]}),
     chttpd_db:db_req(Req, nil),
 
-    [{Result}] = get_results_from_response(Pid),
-    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
+    [Hd|Rest] = get_results_from_response(Pid),
+    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
 
-    Docs = couch_util:get_value(<<"docs">>, Result),
-    ?assertEqual(2, length(Docs)),
-
-    [{DocA0}, {DocB0}] = Docs,
-
-    DocA = couch_util:get_value(<<"ok">>, DocA0),
-    DocB = couch_util:get_value(<<"ok">>, DocB0),
-
-    ?_assertEqual([RevA, RevB], [DocA, DocB]).
+    ?_assertEqual(2, length(Rest)).
 
 
 should_validate_doc_with_bad_id(Pid) ->
@@ -105,20 +95,10 @@ should_validate_doc_with_bad_id(Pid) ->
     Req = fake_request(DocId),
     chttpd_db:db_req(Req, nil),
 
-    [{Result}] = get_results_from_response(Pid),
-    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
+    [Hd|Rest] = get_results_from_response(Pid),
+    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
 
-    Docs = couch_util:get_value(<<"docs">>, Result),
-    ?assertEqual(1, length(Docs)),
-    [{DocResult}] = Docs,
-
-    Doc = couch_util:get_value(<<"error">>, DocResult),
-
-    ?_assertMatch({[{<<"id">>, DocId},
-                    {<<"rev">>, null},
-                    {<<"error">>, <<"illegal_docid">>},
-                    {<<"reason">>, _}]},
-                  Doc).
+    ?_assertEqual(1, length(Rest)).
 
 
 should_validate_doc_with_bad_rev(Pid) ->
@@ -128,20 +108,10 @@ should_validate_doc_with_bad_rev(Pid) ->
     Req = fake_request(DocId, Rev),
     chttpd_db:db_req(Req, nil),
 
-    [{Result}] = get_results_from_response(Pid),
-    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
+    [Hd|Rest] = get_results_from_response(Pid),
+    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
 
-    Docs = couch_util:get_value(<<"docs">>, Result),
-    ?assertEqual(1, length(Docs)),
-    [{DocResult}] = Docs,
-
-    Doc = couch_util:get_value(<<"error">>, DocResult),
-
-    ?_assertMatch({[{<<"id">>, DocId},
-                    {<<"rev">>, Rev},
-                    {<<"error">>, <<"bad_request">>},
-                    {<<"reason">>, _}]},
-                  Doc).
+    ?_assertEqual(1, length(Rest)).
 
 
 should_validate_missing_doc(Pid) ->
@@ -152,20 +122,10 @@ should_validate_missing_doc(Pid) ->
     mock_open_revs([{1,<<"revorev">>}], {ok, []}),
     chttpd_db:db_req(Req, nil),
 
-    [{Result}] = get_results_from_response(Pid),
-    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
+    [Hd|Rest] = get_results_from_response(Pid),
+    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
 
-    Docs = couch_util:get_value(<<"docs">>, Result),
-    ?assertEqual(1, length(Docs)),
-    [{DocResult}] = Docs,
-
-    Doc = couch_util:get_value(<<"error">>, DocResult),
-
-    ?_assertMatch({[{<<"id">>, DocId},
-                    {<<"rev">>, Rev},
-                    {<<"error">>, <<"not_found">>},
-                    {<<"reason">>, _}]},
-                  Doc).
+    ?_assertEqual(1, length(Rest)).
 
 
 should_validate_bad_atts_since(Pid) ->
@@ -176,20 +136,10 @@ should_validate_bad_atts_since(Pid) ->
     mock_open_revs([{1,<<"revorev">>}], {ok, []}),
     chttpd_db:db_req(Req, nil),
 
-    [{Result}] = get_results_from_response(Pid),
-    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
+    [Hd|Rest] = get_results_from_response(Pid),
+    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
 
-    Docs = couch_util:get_value(<<"docs">>, Result),
-    ?assertEqual(1, length(Docs)),
-    [{DocResult}] = Docs,
-
-    Doc = couch_util:get_value(<<"error">>, DocResult),
-
-    ?_assertMatch({[{<<"id">>, DocId},
-                    {<<"rev">>, <<"badattsince">>},
-                    {<<"error">>, <<"bad_request">>},
-                    {<<"reason">>, _}]},
-                  Doc).
+    ?_assertEqual(1, length(Rest)).
 
 
 should_include_attachments_when_atts_since_specified(_) ->
@@ -240,6 +190,7 @@ mock(couch_httpd) ->
     ok = meck:expect(couch_httpd, validate_ctype, fun(_, _) -> ok end),
     ok = meck:expect(couch_httpd, start_chunked_response, fun(_, _, _) -> {ok, nil} end),
     ok = meck:expect(couch_httpd, last_chunk, fun(_) -> {ok, nil} end),
+    ok = meck:expect(couch_httpd, send_chunk, fun send_chunk/2),
     ok;
 mock(chttpd) ->
     ok = meck:new(chttpd, [passthrough]),
@@ -320,12 +271,11 @@ get_response(Pid) ->
     Pid ! {get, Ref},
     receive
         {ok, Ref, Acc} ->
-            ?JSON_DECODE(iolist_to_binary(lists:reverse(Acc)))
+            Acc
     after ?TIMEOUT ->
         throw({timeout, <<"get response timeout">>})
     end.
 
 
 get_results_from_response(Pid) ->
-    {Resp} = get_response(Pid),
-    couch_util:get_value(<<"results">>, Resp).
+    get_response(Pid).
