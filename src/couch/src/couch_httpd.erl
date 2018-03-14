@@ -34,8 +34,6 @@
 -export([validate_host/1]).
 -export([validate_bind_address/1]).
 -export([check_max_request_length/1]).
--export([mp_eof/1, mp_boundary/0, mp_to_binary/1, mp_to_list/1]).
--export([mp_make_header/2, mp_make_header/3, mp_header_value/2, mp_join/2]).
 
 
 -define(HANDLER_NAME_IN_MODULE_POS, 6).
@@ -450,6 +448,7 @@ validate_ctype(Req, Ctype) ->
         end
     end.
 
+
 check_max_request_length(Req) ->
     Len = list_to_integer(header_value(Req, "Content-Length", "0")),
     MaxLen = config:get_integer("httpd", "max_http_request_size", 4294967296),
@@ -462,66 +461,6 @@ check_max_request_length(Req) ->
 
 
 % Utilities
-
--spec mp_boundary() -> binary().
-mp_boundary() ->
-      Unique = couch_uuids:random(),
-      <<"---------------------------", Unique/binary>>.
-
--spec mp_eof(binary()) -> binary().
-mp_eof(Boundary) ->
-    <<"--",  Boundary/binary, "--\r\n">>.
-
-mp_make_header(Name, Value) ->
-  Value1 = if is_binary(Value) -> Value;
-              true -> mp_to_binary(Value)
-           end,
-  << Name/binary, ": ", Value1/binary >>.
-
-mp_make_header(Name, Value, Params) ->
-  Value1 = mp_header_value(mp_to_binary(Value), Params),
-  << Name/binary, ": ", Value1/binary >>.
-
-mp_header_value(Value, Params) when is_list(Value) ->
-  mp_header_value(list_to_binary(Value), Params);
-mp_header_value(Value, Params) ->
-  Params1 = lists:foldl(fun({K, V}, Acc) ->
-    K1 = mp_to_binary(K),
-    V1 = mp_to_binary(V),
-    ParamStr = << K1/binary, "=", V1/binary  >>,
-    [ParamStr | Acc]
-                        end, [], Params),
-  mp_join([Value] ++ lists:reverse(Params1), "; ").
-
-mp_to_binary(Headers) when is_list(Headers) ->
-  HeadersList = lists:foldl(fun
-                              ({Name, Value}, Acc) ->
-                                [mp_make_header(Name, Value) | Acc];
-                              ({Name, Value, Params}, Acc) ->
-                                [mp_make_header(Name, Value, Params) | Acc]
-                            end, [], Headers),
-  iolist_to_binary([
-    mp_join(lists:reverse(HeadersList), <<"\r\n">>),
-    <<"\r\n\r\n">>]);
-mp_to_binary(Headers) ->
-  mp_to_binary(mp_to_list(Headers)).
-
-mp_to_list(Headers) ->
-  lists:reverse(dict:fold(fun(_K, KV, Acc) -> [KV | Acc] end, [], Headers)).
-
-mp_join([], _Separator) ->
-  <<>>;
-mp_join([S], _separator) ->
-  S;
-mp_join(L, Separator) ->
-  iolist_to_binary(mp_join(lists:reverse(L), Separator, [])).
-
-mp_join([], _Separator, Acc) ->
-  Acc;
-mp_join([S | Rest], Separator, []) ->
-  mp_join(Rest, Separator, [S]);
-mp_join([S | Rest], Separator, Acc) ->
-  mp_join(Rest, Separator, [S, Separator | Acc]).
 
 partition(Path) ->
     mochiweb_util:partition(Path, "/").
