@@ -504,15 +504,22 @@ db_req(#httpd{method='POST', path_parts=[_, <<"_bulk_get">>],
                           {_, {ok, Results}, Options1} ->
                               send_docs_multipart(bulk_get, Req, Results, Options1,
                                                   OuterBoundary, Resp);
-                          {_, {error, Error}, _Options1} ->
-                              chttpd:send_error(Req, Error)
+                          {DocId, {error, {RevId, Error, Reason}}, _Options1} ->
+                              Json = ?JSON_ENCODE({[{<<"id">>, DocId},
+                                                    {<<"rev">>, RevId},
+                                                    {<<"error">>, Error},
+                                                    {<<"reason">>, Reason}]}),
+                              couch_httpd:send_chunk(Resp,
+                                  [<<"\r\n--", OuterBoundary/binary>>,
+                                  <<"\r\nContent-Type: application/json; error=\"true\"\r\n\r\n">>,
+                                  Json])
                       end
                   end, <<"">>, Docs),
                   case Docs of
                       [] ->
                           ok;
                       _ ->
-                          send_chunk(Resp, <<"\r\n", "--", OuterBoundary/binary, "--\r\n">>)
+                          couch_httpd:send_chunk(Resp, <<"\r\n", "--", OuterBoundary/binary, "--\r\n">>)
                   end,
             couch_httpd:last_chunk(Resp)
             end
@@ -942,14 +949,16 @@ send_docs_multipart(bulk_get, _Req, Results, Options1, OuterBoundary, Resp) ->
             after
                 demonitor_refs(Refs)
             end;
-        ({{not_found, missing}, RevId}) ->
-            RevStr = couch_doc:rev_to_str(RevId),
-            Json = ?JSON_ENCODE({[{<<"missing">>, RevStr}]}),
-            couch_httpd:send_chunk(Resp,
-                [<<"\r\nContent-Type: application/json; error=\"true\"\r\n\r\n">>,
-                Json,
-                <<"\r\n", OuterBoundary/binary>>])
-         end, Results);
+          ({{not_found, missing}, RevId}) ->
+              RevStr = couch_doc:rev_to_str(RevId),
+              Json = ?JSON_ENCODE({[{<<"rev">>, RevStr},
+                                    {<<"error">>, <<"not_found">>},
+                                    {<<"reason">>, <<"missing">>}]}),
+              couch_httpd:send_chunk(Resp,
+                  [<<"\r\n--", OuterBoundary/binary>>,
+                  <<"\r\nContent-Type: application/json; error=\"true\"\r\n\r\n">>,
+                  Json])
+          end, Results);
 send_docs_multipart(doc_req, Req, Results, Options1, _OuterBoundary, _Resp) ->
     OuterBoundary = couch_uuids:random(),
     InnerBoundary = couch_uuids:random(),

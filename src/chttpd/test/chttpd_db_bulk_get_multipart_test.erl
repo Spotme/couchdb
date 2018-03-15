@@ -1,3 +1,15 @@
+%% Licensed under the Apache License, Version 2.0 (the "License"); you may not
+%% use this file except in compliance with the License. You may obtain a copy of
+%% the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+%% WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+%% License for the specific language governing permissions and limitations under
+%% the License.
+
 -module(chttpd_db_bulk_get_multipart_test).
 
 -include_lib("couch/include/couch_eunit.hrl").
@@ -83,10 +95,8 @@ should_get_doc_with_all_revs(Pid) ->
     mock_open_revs(all, {ok, [{ok, DocRevA}, {ok, DocRevB}]}),
     chttpd_db:db_req(Req, nil),
 
-    [Hd|Rest] = get_results_from_response(Pid),
-    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
-
-    ?_assertEqual(2, length(Rest)).
+    Result = get_results_from_response(Pid),
+    ?_assertEqual(DocId, couch_util:get_value(<<"_id">>, Result)).
 
 
 should_validate_doc_with_bad_id(Pid) ->
@@ -95,10 +105,13 @@ should_validate_doc_with_bad_id(Pid) ->
     Req = fake_request(DocId),
     chttpd_db:db_req(Req, nil),
 
-    [Hd|Rest] = get_results_from_response(Pid),
-    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
+    Result = get_results_from_response(Pid),
+    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
 
-    ?_assertEqual(1, length(Rest)).
+    ?_assertMatch([{<<"id">>, DocId},
+                    {<<"rev">>, null},
+                    {<<"error">>, <<"illegal_docid">>},
+                    {<<"reason">>, _}], Result).
 
 
 should_validate_doc_with_bad_rev(Pid) ->
@@ -108,10 +121,13 @@ should_validate_doc_with_bad_rev(Pid) ->
     Req = fake_request(DocId, Rev),
     chttpd_db:db_req(Req, nil),
 
-    [Hd|Rest] = get_results_from_response(Pid),
-    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
+    Result = get_results_from_response(Pid),
+    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
 
-    ?_assertEqual(1, length(Rest)).
+    ?_assertMatch([{<<"id">>, DocId},
+                    {<<"rev">>, Rev},
+                    {<<"error">>, <<"bad_request">>},
+                    {<<"reason">>, _}], Result).
 
 
 should_validate_missing_doc(Pid) ->
@@ -122,10 +138,13 @@ should_validate_missing_doc(Pid) ->
     mock_open_revs([{1,<<"revorev">>}], {ok, []}),
     chttpd_db:db_req(Req, nil),
 
-    [Hd|Rest] = get_results_from_response(Pid),
-    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
+    Result = get_results_from_response(Pid),
+    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
 
-    ?_assertEqual(1, length(Rest)).
+    ?_assertMatch([{<<"id">>, DocId},
+                    {<<"rev">>, Rev},
+                    {<<"error">>, <<"not_found">>},
+                    {<<"reason">>, _}], Result).
 
 
 should_validate_bad_atts_since(Pid) ->
@@ -136,10 +155,13 @@ should_validate_bad_atts_since(Pid) ->
     mock_open_revs([{1,<<"revorev">>}], {ok, []}),
     chttpd_db:db_req(Req, nil),
 
-    [Hd|Rest] = get_results_from_response(Pid),
-    ?assertEqual(<<"\r\n---">>, binary:part(Hd, {0, 5})),
+    Result = get_results_from_response(Pid),
+    ?assertEqual(DocId, couch_util:get_value(<<"id">>, Result)),
 
-    ?_assertEqual(1, length(Rest)).
+    ?_assertMatch([{<<"id">>, DocId},
+                    {<<"rev">>, <<"badattsince">>},
+                    {<<"error">>, <<"bad_request">>},
+                    {<<"reason">>, _}], Result).
 
 
 should_include_attachments_when_atts_since_specified(_) ->
@@ -182,19 +204,20 @@ mock_open_revs(RevsReq0, RevsResp) ->
 mock(mochireq) ->
     ok = meck:new(mochireq, [non_strict]),
     ok = meck:expect(mochireq, parse_qs, fun() -> [] end),
-    ok = meck:expect(mochireq, accepts_content_type, fun("multipart/related") -> true;
+    ok = meck:expect(mochireq, accepts_content_type, fun("multipart/mixed") -> true;
+                                                        ("multipart/related") -> true;
                                                         (_) -> false end),
     ok;
 mock(couch_httpd) ->
     ok = meck:new(couch_httpd, [passthrough]),
     ok = meck:expect(couch_httpd, validate_ctype, fun(_, _) -> ok end),
-    ok = meck:expect(couch_httpd, start_chunked_response, fun(_, _, _) -> {ok, nil} end),
     ok = meck:expect(couch_httpd, last_chunk, fun(_) -> {ok, nil} end),
     ok = meck:expect(couch_httpd, send_chunk, fun send_chunk/2),
     ok;
 mock(chttpd) ->
     ok = meck:new(chttpd, [passthrough]),
     ok = meck:expect(chttpd, start_json_response, fun(_, _) -> {ok, nil} end),
+    ok = meck:expect(chttpd, start_chunked_response, fun(_, _, _) -> {ok, nil} end),
     ok = meck:expect(chttpd, end_json_response, fun(_) -> ok end),
     ok = meck:expect(chttpd, send_chunk, fun send_chunk/2),
     ok = meck:expect(chttpd, json_body_obj, fun (#httpd{req_body=Body}) -> Body end),
@@ -276,6 +299,11 @@ get_response(Pid) ->
         throw({timeout, <<"get response timeout">>})
     end.
 
-
 get_results_from_response(Pid) ->
-    get_response(Pid).
+    case get_response(Pid) of
+        [] ->
+          [];
+        Result ->
+          {Result1} = ?JSON_DECODE(lists:nth(2, Result)),
+          Result1
+    end.
