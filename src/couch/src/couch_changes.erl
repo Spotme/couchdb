@@ -290,9 +290,14 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
     end;
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
           when FilterType == view ->
+    ?LOG_INFO("usual view"),
     Docs = open_revs(Db, DocInfo, Style),
     {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
     filter_revs(Passes, Docs);
+filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
+            when FilterType == fast_view ->
+    ?LOG_INFO("fast_view"),
+    apply_style(DocInfo, Style);
 % filter(Db, DocInfo, {FilterType, Style, DDoc, VName, FilterArgs})
 %           when FilterType == view; FilterType == fast_view ->
 %     DbNameShard = fabric:dbname(Db),
