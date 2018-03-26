@@ -10,23 +10,25 @@
 % License for the specific language governing permissions and limitations under
 % the License.
 
--module(couch_index_change_events_tests).
+-module(couch_mrview_change_events_tests).
 
 -include_lib("couch/include/couch_eunit.hrl").
 -include_lib("couch/include/couch_db.hrl").
 
 
 setup() ->
-    {ok, Db} = couch_mrview_test_util:new_db(?tempdb(), map),
-    _Doc = couch_mrview_test_util:doc(1),
-    Db.
+  {ok, Db} = couch_mrview_test_util:init_db(?tempdb(), map),
+  Db.
+    % {ok, Db} = couch_mrview_test_util:new_db(?tempdb(), map),
+    % _Doc = couch_mrview_test_util:doc(1),
+    % Db.
 
 teardown(Db) ->
     couch_db:close(Db),
     couch_server:delete(couch_db:name(Db), [?ADMIN_CTX]),
     ok.
 
-changes_index_test() ->
+changes_index_test_() ->
     {
         "changes index events tests",
         {
@@ -36,13 +38,15 @@ changes_index_test() ->
                 foreach,
                 fun setup/0, fun teardown/1,
                 [
-                    fun test_emit_event/1
+                    fun should_emit_event/1
                 ]
             }
         }
     }.
 
-test_emit_event(Db) ->
+should_emit_event(Db) ->
+  Ref = 3,
+  lists:foreach(fun(_) -> ok end, Ref),
   % Doc = couch_db:open_doc(Db, 1),
   % Ref = make_ref(),
   % couch_event:link_listener(
