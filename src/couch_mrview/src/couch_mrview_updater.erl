@@ -212,6 +212,7 @@ write_results(Parent, #mrst{db_name = DbName, idx_name = IdxName} = State) ->
         {Go, {Seq, ViewKVs, DocIdKeys, Seqs, Log}} ->
             erlang:put(io_priority, {view_update, DbName, IdxName}),
             NewState = write_kvs(State, Seq, ViewKVs, DocIdKeys, Seqs, Log),
+            couch_mrview_update_notifier:notify({index_updated, {DbName, IdxName}}),
             if Go == stop ->
                 Parent ! {new_state, NewState};
             true ->
