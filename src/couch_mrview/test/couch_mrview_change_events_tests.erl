@@ -44,20 +44,20 @@ changes_index_test_() ->
         }
     }.
 
-should_emit_event(Db) ->
+should_emit_event_(Db) ->
   Ref = 3,
   lists:foreach(fun(_) -> ok end, Ref),
-  % Doc = couch_db:open_doc(Db, 1),
-  % Ref = make_ref(),
-  % couch_event:link_listener(
-  %      ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
-  % ),
-  % {ok, _Rev} = couch_db:update_doc(Db, Doc, []),
-  % receive
-  %   {_Pid, not_found} ->
-  %     ok
-  % end
-  ?_assertEqual(2,3).
+  Doc = couch_db:open_doc(Db, 1),
+  Ref = make_ref(),
+  couch_event:link_listener(
+       ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+  ),
+  {ok, _Rev} = couch_db:update_doc(Db, Doc, []),
+  Result = receive
+    {updated, _} = Msg ->
+      Msg
+  end
+  ?_assertEqual(Msg, {updated, Ref).
 
 changes_view_event(_DbName, Msg, {Parent, Ref}) ->
     case Msg of
