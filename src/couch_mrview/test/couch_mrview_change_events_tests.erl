@@ -15,6 +15,7 @@
 -include_lib("couch/include/couch_eunit.hrl").
 -include_lib("couch/include/couch_db.hrl").
 
+-export([changes_view_event/3]). 
 
 setup() ->
   {ok, Db} = couch_mrview_test_util:init_db(?tempdb(), map),
@@ -38,16 +39,14 @@ changes_index_test_() ->
                 foreach,
                 fun setup/0, fun teardown/1,
                 [
-                    fun should_emit_event/1
+                    fun should_emit_event_/1
                 ]
             }
         }
     }.
 
 should_emit_event_(Db) ->
-  Ref = 3,
-  lists:foreach(fun(_) -> ok end, Ref),
-  Doc = couch_db:open_doc(Db, 1),
+  Doc = couch_mrview_test_util:doc(12),
   Ref = make_ref(),
   couch_event:link_listener(
        ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
@@ -56,8 +55,8 @@ should_emit_event_(Db) ->
   Result = receive
     {updated, _} = Msg ->
       Msg
-  end
-  ?_assertEqual(Msg, {updated, Ref).
+  end,
+  ?_assertEqual(Msg, {updated, Ref}).
 
 changes_view_event(_DbName, Msg, {Parent, Ref}) ->
     case Msg of
