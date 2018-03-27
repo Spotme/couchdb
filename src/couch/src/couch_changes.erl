@@ -283,11 +283,14 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
         _ ->
             []
     end;
-filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
-        when FilterType == view; FilterType == fast_view ->
+filter(Db, DocInfo, {FilterType=view, Style, DDoc, VName})
+        when FilterType == view ->
     Docs = open_revs(Db, DocInfo, Style),
     {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
     filter_revs(Passes, Docs);
+filter(_Db, DocInfo, {FilterType, Style, _DDoc, _VName})
+        when FilterType == fast_view ->
+    apply_style(DocInfo, Style);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
         {json_req, _} -> Req0;
