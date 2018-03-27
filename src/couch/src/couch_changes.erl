@@ -225,8 +225,8 @@ configure_filter("_view", Style, Req, Db) ->
                 true ->
                     DIR = fabric_util:doc_id_and_rev(DDoc),
                     case ViewOptions of
-                      nil ->
-                        {{fetch, FilterType, Style, DIR, VName}, nil};
+                      [] ->
+                        {{fetch, FilterType, Style, DIR, VName}, []};
                       Options ->
                         {{fetch, FilterType, Style, DIR, VName}, Options}
                       end;
@@ -343,7 +343,7 @@ get_view_qs(Req) ->
     ViewName = couch_httpd:qs_value(Req, "view", ""),
     case parse_view_options(Query, []) of
       [] ->
-        {ViewName, nil};
+        {ViewName, []};
       ViewOptions ->
         {ViewName, ViewOptions}
       end.
