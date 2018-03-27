@@ -124,7 +124,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
         },
         try
             {ok, #cacc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
-                couch_mrview:view_changes_since(Db, DDoc, StartSeq, Enum, Opts, Acc0),
+                couch_mrview:view_changes_since(Db, DDoc, VName, StartSeq, Enum, Opts, Acc0),
             rexi:stream_last({complete, [
                 {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
                 {pending, Pending}

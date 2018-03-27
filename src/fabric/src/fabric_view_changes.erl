@@ -22,11 +22,14 @@
 -include_lib("mem3/include/mem3.hrl").
 -include_lib("couch/include/couch_db.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("couch_mrview/include/couch_mrview.hrl").
+
 
 -import(fabric_db_update_listener, [wait_db_updated/1]).
 
 go(DbName, Feed, Options, Callback, Acc0) when Feed == "continuous" orelse
         Feed == "longpoll" orelse Feed == "eventsource" ->
+    _ = maybe_update_others(DbName, Options),
     Args = make_changes_args(Options),
     Since = get_start_seq(DbName, Args),
     case validate_start_seq(DbName, Since) of
@@ -36,9 +39,9 @@ go(DbName, Feed, Options, Callback, Acc0) when Feed == "continuous" orelse
         Ref = make_ref(),
         Parent = self(),
         UpdateListener = case Options#changes_args.filter_fun of
-                            {fetch, fast_view, _, DDoc, _} ->
+                            {fetch, fast_view, _, {DDocId, _Rev}, _} ->
                                 {spawn_link(fabric_db_update_listener, go,
-                                                             [Parent, Ref, {DbName, DDoc}, Timeout]),
+                                                             [Parent, Ref, {DbName, DDocId}, Timeout]),
                                               Ref};
                             _ ->
                                 {spawn_link(fabric_db_update_listener, go,
@@ -64,7 +67,9 @@ go(DbName, Feed, Options, Callback, Acc0) when Feed == "continuous" orelse
         Callback(Error, Acc0)
     end;
 
+
 go(DbName, "normal", Options, Callback, Acc0) ->
+    _ = maybe_update_others(DbName, Options),
     Args = make_changes_args(Options),
     Since = get_start_seq(DbName, Args),
     case validate_start_seq(DbName, Since) of
@@ -84,6 +89,13 @@ go(DbName, "normal", Options, Callback, Acc0) ->
         Callback(Error, Acc0)
     end.
 
+maybe_update_others(DbName, #changes_args{filter_fun={fetch, fast_view, _, {DDocId, Rev}, VName}}) ->
+    Shards = fabric_view:get_shards(DbName, #mrargs{view_type=map}),
+    Res = fabric_view:maybe_update_others(DbName, {DDocId, Rev}, Shards, VName, #mrargs{}),
+    ok;
+maybe_update_others(_, _) ->
+    ok.
+  
 keep_sending_changes(DbName, Args, Callback, Seqs, AccIn, Timeout, UpListen, T0) ->
     #changes_args{limit=Limit, feed=Feed, heartbeat=Heartbeat} = Args,
     {ok, Collector} = send_changes(DbName, Args, Callback, Seqs, AccIn, Timeout),
