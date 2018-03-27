@@ -314,7 +314,7 @@ count_view_changes_since(Db, DDoc, VName, SinceSeq, Options) ->
                 true -> View#mrview.key_byseq_btree;
                 _ -> View#mrview.seq_btree
             end,
-            RedFun = fun(_SeqStart, PartialReds, 0) ->
+            RedFun = fun(_SeqStart, PartialReds, _) ->
                 {ok, couch_btree:final_reduce(Btree, PartialReds)}
             end,
             lists:foldl(fun(Opts, Acc0) ->
@@ -322,6 +322,7 @@ count_view_changes_since(Db, DDoc, VName, SinceSeq, Options) ->
                     {ok, N} when is_integer(N) ->
                         Acc0 + N;
                     {ok, N} when is_tuple(N) ->
+                        ?LOG_INFO(["are you kidding me", N]),
                         Acc0 + element(1, N)
                 end
             end, 0, OptList);

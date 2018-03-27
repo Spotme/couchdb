@@ -133,7 +133,7 @@ ddoc_to_mrst(DbName, #doc{id=Id, body={Fields}}) ->
     {DesignOpts} = proplists:get_value(<<"options">>, Fields, {[]}),
     SeqIndexed = proplists:get_value(<<"seq_indexed">>, DesignOpts, false),
     KeySeqIndexed = proplists:get_value(<<"keyseq_indexed">>, DesignOpts, false),
-
+    IncludeDeleted = couch_util:get_value(<<"include_deleted">>, DesignOpts, false),
     {RawViews} = couch_util:get_value(<<"views">>, Fields, {[]}),
     BySrc = lists:foldl(MakeDict, dict:new(), RawViews),
 
@@ -141,10 +141,8 @@ ddoc_to_mrst(DbName, #doc{id=Id, body={Fields}}) ->
             {View#mrview{id_num=N, seq_indexed=SeqIndexed, keyseq_indexed=KeySeqIndexed}, N+1}
     end,
     {Views, _} = lists:mapfoldl(NumViews, 0, lists:sort(dict:to_list(BySrc))),
-
     Language = couch_util:get_value(<<"language">>, Fields, <<"javascript">>),
     Lib = couch_util:get_value(<<"lib">>, RawViews, {[]}),
-
     IdxState = #mrst{
         db_name=DbName,
         idx_name=Id,
@@ -152,6 +150,7 @@ ddoc_to_mrst(DbName, #doc{id=Id, body={Fields}}) ->
         views=Views,
         language=Language,
         design_opts=DesignOpts,
+        include_deleted=IncludeDeleted,
         seq_indexed=SeqIndexed,
         keyseq_indexed=KeySeqIndexed
     },

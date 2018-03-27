@@ -140,7 +140,7 @@ process_doc(Doc, Seq, #mrst{doc_acc=Acc}=State) when length(Acc) > 100 ->
     process_doc(Doc, Seq, State#mrst{doc_acc=[]});
 process_doc(nil, Seq, #mrst{doc_acc=Acc}=State) ->
     {ok, State#mrst{doc_acc=[{nil, Seq, nil, nil} | Acc]}};
-process_doc(#doc{id=Id, deleted=true}=Doc, Seq, #mrst{doc_acc=Acc}=State) ->
+process_doc(#doc{id=Id, deleted=true}=Doc, Seq, #mrst{doc_acc=Acc, include_deleted=false}=State) ->
     Rev= extract_rev(Doc#doc.revs),
     {ok, State#mrst{doc_acc=[{Id, Seq, Rev, deleted} | Acc]}};
 process_doc(#doc{id=Id}=Doc, Seq, #mrst{doc_acc=Acc}=State) ->

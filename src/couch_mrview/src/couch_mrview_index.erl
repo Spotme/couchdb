@@ -35,13 +35,15 @@ get(purge_seq, #mrst{purge_seq = PurgeSeq}) ->
     PurgeSeq;
 get(update_options, #mrst{design_opts = Opts}) ->
     IncDesign = couch_util:get_value(<<"include_design">>, Opts, false),
+    IncDeleted = couch_util:get_value(<<"include_deleted">>, Opts, false),
     LocalSeq = couch_util:get_value(<<"local_seq">>, Opts, false),
     SeqIndexed = couch_util:get_value(<<"seq_indexed">>, Opts, false),
     KeySeqIndexed = couch_util:get_value(<<"keyseq_indexed">>, Opts, false),
     if IncDesign -> [include_design]; true -> [] end
         ++ if LocalSeq -> [local_seq]; true -> [] end
         ++ if KeySeqIndexed -> [keyseq_indexed]; true -> [] end
-        ++ if SeqIndexed -> [seq_indexed]; true -> [] end;
+        ++ if SeqIndexed -> [seq_indexed]; true -> [] end
+        ++ if IncDeleted -> [include_deleted]; true -> [] end;
 get(fd, #mrst{fd = Fd}) ->
     Fd;
 get(language, #mrst{language = Language}) ->
