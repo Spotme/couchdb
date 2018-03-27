@@ -107,7 +107,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
         #changes_args{dir=Dir,
                       filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
         StartSeq = calculate_start_seq(Db, node(), StartVector),
-        Enum = fun({_Seq, _Key, DocId}, _Val, Acc) -> 
+        Enum = fun({{_Seq, _Key, DocId}, _Val}, Acc) -> 
                     case couch_db:get_doc_info(Db, DocId) of
                         {ok, DocInfo} -> changes_enumerator(DocInfo, Acc);
                         _ ->  {ok, Acc}
