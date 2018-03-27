@@ -103,7 +103,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
     case get_or_create_db(DbName, DbOpenOptions) of
     {ok, Db} ->
         #changes_args{dir=Dir,
-                      filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
+                      filter_fun={fetch, _FilterType, _Style, DDoc, VName}} = ChangeArgs,
         StartSeq = calculate_start_seq(Db, node(), StartVector),
         Enum = fun({_Seq, _Key, DocId}, _Val, Acc) -> 
                     case couch_db:get_doc_info(Db, DocId) of
