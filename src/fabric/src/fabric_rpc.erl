@@ -62,8 +62,9 @@ changes(DbName, Options, StartVector, DbOptions) ->
             {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
             Args1 = Args0#changes_args{filter_fun={view, Style, DDoc, VName}},
             db_changes(DbName, Options, StartVector, DbOptions, Args1);
-        {fetch, fast_view, _, _, _} ->
-            view_changes(DbName, Options, StartVector, DbOptions, Args0);
+        {fetch, fast_view, Style, {DDocId, _Rev}, VName} ->
+            Args1 = Args0#changes_args{filter_fun={fetch, fast_view, Style, DDocId, VName}},
+            view_changes(DbName, Options, StartVector, DbOptions, Args1);
         _ ->
             db_changes(DbName, Options, StartVector, DbOptions, Args0)
     end.
@@ -117,7 +118,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
           seq = StartSeq,
           args = ChangeArgs,
           options = Options,
-          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, []),
+          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, Opts),
           epochs = couch_db:get_epochs(Db)
         },
         try
