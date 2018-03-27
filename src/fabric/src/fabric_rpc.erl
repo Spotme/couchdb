@@ -114,18 +114,17 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
                         _ ->  {ok, Acc}
                     end
                 end,
-        Opts = [{dir,Dir}] ++ FilterArgs,
         Acc0 = #cacc{
           db = Db,
           seq = StartSeq,
           args = ChangeArgs,
           options = Options,
-          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, Opts),
+          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, FilterArgs),
           epochs = couch_db:get_epochs(Db)
         },
         try
             {ok, #cacc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
-                couch_mrview:view_changes_since(Db, DDoc, VName, StartSeq, Enum, Opts, Acc0),
+                couch_mrview:view_changes_since(Db, DDoc, VName, StartSeq, Enum, FilterArgs, Acc0),
             rexi:stream_last({complete, [
                 {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
                 {pending, Pending}
@@ -396,7 +395,6 @@ changes_enumerator(DocInfo, Acc) ->
             include_docs = IncludeDocs,
             conflicts = Conflicts,
             filter_fun = Filter,
-            filter_args = FilterArgs,
             doc_options = DocOptions
         },
         pending = Pending,
