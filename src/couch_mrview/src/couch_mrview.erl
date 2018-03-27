@@ -322,7 +322,6 @@ count_view_changes_since(Db, DDoc, VName, SinceSeq, Options) ->
                     {ok, N} when is_integer(N) ->
                         Acc0 + N;
                     {ok, N} when is_tuple(N) ->
-                        ?LOG_INFO(["are you kidding me", N]),
                         Acc0 + element(1, N)
                 end
             end, 0, OptList);
