@@ -104,8 +104,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
     DbOpenOptions = ChangeArgs#changes_args.db_open_options ++ DbOptions,
     case get_or_create_db(DbName, DbOpenOptions) of
     {ok, Db} ->
-        #changes_args{dir=Dir,
-                      filter_args=FilterArgs,
+        #changes_args{filter_args=FilterArgs,
                       filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
         StartSeq = calculate_start_seq(Db, node(), StartVector),
         Enum = fun({{_Seq, _Key, DocId}, _Val}, Acc) -> 
