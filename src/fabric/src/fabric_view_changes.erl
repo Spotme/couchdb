@@ -35,9 +35,16 @@ go(DbName, Feed, Options, Callback, Acc0) when Feed == "continuous" orelse
         {Timeout, _} = couch_changes:get_changes_timeout(Args, Callback),
         Ref = make_ref(),
         Parent = self(),
-        UpdateListener = {spawn_link(fabric_db_update_listener, go,
-                                     [Parent, Ref, DbName, Timeout]),
-                          Ref},
+        UpdateListener = case Options#changes_args.filter_fun of
+                            {fetch, fast_view, _, DDoc, _} ->
+                                {spawn_link(fabric_db_update_listener, go,
+                                                             [Parent, Ref, {DbName, DDoc}, Timeout]),
+                                              Ref};
+                            _ ->
+                                {spawn_link(fabric_db_update_listener, go,
+                                                             [Parent, Ref, DbName, Timeout]),
+                                              Ref}
+        end,
         put(changes_epoch, get_changes_epoch()),
         try
             keep_sending_changes(
