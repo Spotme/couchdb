@@ -27,6 +27,7 @@
 -record(cb_state, {
     client_pid,
     client_ref,
+    ddoc,
     notify
 }).
 
@@ -36,6 +37,33 @@
     shards
 }).
 
+
+go(Parent, ParentRef, {DbName, DDoc}, Timeout) ->
+  Shards = mem3:shards(DbName),
+  Notifiers = start_update_notifiers(Shards),
+  MonRefs = lists:usort([rexi_utils:server_pid(N) || #worker{node = N} <- Notifiers]),
+  RexiMon = rexi_monitor:start(MonRefs),
+  MonPid = start_cleanup_monitor(self(), Notifiers),
+  %% This is not a common pattern for rexi but to enable the calling
+  %% process to communicate via handle_message/3 we "fake" it as a
+  %% a spawned worker.
+  Workers = [#worker{ref=ParentRef, pid=Parent} | Notifiers],
+  Acc = #acc{
+      parent = Parent,
+      state = unset,
+      shards = Shards
+  },
+  Resp = try
+      receive_results(Workers, Acc, Timeout)
+  after
+      rexi_monitor:stop(RexiMon),
+      stop_cleanup_monitor(MonPid)
+  end,
+  case Resp of
+      {ok, _} -> ok;
+      {error, Error} -> erlang:error(Error);
+      Error -> erlang:error(Error)
+  end;
 go(Parent, ParentRef, DbName, Timeout) ->
     Shards = mem3:shards(DbName),
     Notifiers = start_update_notifiers(Shards),
@@ -63,6 +91,7 @@ go(Parent, ParentRef, DbName, Timeout) ->
         Error -> erlang:error(Error)
     end.
 
+
 start_update_notifiers(Shards) ->
     EndPointDict = lists:foldl(fun(#shard{node=Node, name=Name}, Acc) ->
         dict:append(Node, Name, Acc)
@@ -73,6 +102,12 @@ start_update_notifiers(Shards) ->
     end, dict:to_list(EndPointDict)).
 
 % rexi endpoint
+start_update_notifier({DbName, DDoc}) ->
+    {Caller, Ref} = get(rexi_from),
+    Notify = config:get("couchdb", "maintenance_mode", "false") /= "true",
+    State = #cb_state{client_pid = Caller, client_ref = Ref, notify = Notify, ddoc = DDoc},
+    Options = [{parent, Caller}, {dbname, DbName}],
+    couch_event:listen(?MODULE, updated, State, Options);
 start_update_notifier(DbNames) ->
     {Caller, Ref} = get(rexi_from),
     Notify = config:get("couchdb", "maintenance_mode", "false") /= "true",
