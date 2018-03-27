@@ -62,8 +62,9 @@ changes(DbName, Options, StartVector, DbOptions) ->
             {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
             Args1 = Args0#changes_args{filter_fun={view, Style, DDoc, VName}},
             db_changes(DbName, Options, StartVector, DbOptions, Args1);
-        {fetch, fast_view, Style, {DDocId, _Rev}, VName} ->
-            Args1 = Args0#changes_args{filter_fun={fetch, fast_view, Style, DDocId, VName}},
+        {fetch, fast_view, Style, {DDocId, Rev}, VName} ->
+            {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
+            Args1 = Args0#changes_args{filter_fun={fast_view, Style, DDoc, VName}},
             view_changes(DbName, Options, StartVector, DbOptions, Args1);
         _ ->
             db_changes(DbName, Options, StartVector, DbOptions, Args0)
@@ -104,7 +105,7 @@ view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
     case get_or_create_db(DbName, DbOpenOptions) of
     {ok, Db} ->
         #changes_args{dir=Dir,
-                      filter_fun={fetch, _FilterType, _Style, DDoc, VName}} = ChangeArgs,
+                      filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
         StartSeq = calculate_start_seq(Db, node(), StartVector),
         Enum = fun({_Seq, _Key, DocId}, _Val, Acc) -> 
                     case couch_db:get_doc_info(Db, DocId) of

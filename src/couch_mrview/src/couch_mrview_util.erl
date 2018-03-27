@@ -98,6 +98,7 @@ get_view_index_state(Db, DDoc, ViewName, Args0, RetryCount) ->
         error:{badmatch, Error} ->
             throw(Error);
         Error ->
+            ?LOG_INFO(["get_view_index_state error :", Error]),
             throw(Error)
     end.
 
