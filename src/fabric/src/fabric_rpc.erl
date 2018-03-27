@@ -402,7 +402,6 @@ changes_enumerator(DocInfo, Acc) ->
         epochs = Epochs
     } = Acc,
     #doc_info{id=Id, high_seq=Seq, revs=[#rev_info{deleted=Del}|_]} = DocInfo,
-    couch_log:info("fabric_rpc.erl changes_enumerator FilterArgs: ~p", [FilterArgs]),
     case [X || X <- couch_changes:filter(Db, DocInfo, Filter), X /= null] of
     [] ->
         ChangesRow = {no_pass, [
