@@ -91,7 +91,7 @@ go(DbName, "normal", Options, Callback, Acc0) ->
 
 maybe_update_others(DbName, #changes_args{filter_fun={fetch, fast_view, _, {DDocId, Rev}, VName}}) ->
     Shards = fabric_view:get_shards(DbName, #mrargs{view_type=map}),
-    Res = fabric_view:maybe_update_others(DbName, {DDocId, Rev}, Shards, VName, #mrargs{}),
+    _Res = fabric_view:maybe_update_others(DbName, {DDocId, Rev}, Shards, VName, #mrargs{}),
     ok;
 maybe_update_others(_, _) ->
     ok.
