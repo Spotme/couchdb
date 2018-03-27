@@ -14,7 +14,7 @@
 
 -export([try_compile/4]).
 -export([start_doc_map/3, map_doc_raw/2, stop_doc_map/1, raw_to_ejson/1]).
--export([reduce/3, rereduce/3,validate_doc_update/5]).
+-export([reduce/3, rereduce/3, validate_doc_update/5, validate_doc_read/4]).
 -export([filter_docs/5]).
 -export([filter_view/3]).
 -export([rewrite/3]).
@@ -324,7 +324,7 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
         couch_stats:increment_counter([couchdb, query_server, vdu_rejects], 1)
     end,
     case Resp of
-        1 ->
+        RespCode when RespCode =:= 1; RespCode =:= ok; RespCode =:= true ->
             ok;
         {[{<<"forbidden">>, Message}]} ->
             throw({forbidden, Message});
@@ -335,6 +335,29 @@ validate_doc_update(DDoc, EditDoc, DiskDoc, Ctx, SecObj) ->
         Message when is_binary(Message) ->
             throw({unknown_error, Message})
     end.
+
+% use the function stored in ddoc.validate_doc_read to test a doc read.
+-spec validate_doc_read(DDoc, Doc, Ctx, SecObj) -> ok when
+        DDoc    :: ddoc(),
+        Doc     :: doc(),
+        Ctx     :: user_ctx(),
+        SecObj  :: sec_obj().
+
+validate_doc_read(DDoc, Doc, Ctx, SecObj) ->
+      JsonDoc = couch_doc:to_json_obj(Doc, [revs]),
+      case ddoc_prompt(DDoc, [<<"validate_doc_read">>],
+                       [JsonDoc, Ctx, SecObj]) of
+          RespCode when RespCode =:= 1; RespCode =:= ok; RespCode =:= true  ->
+              ok;
+          {[{<<"forbidden">>, Message}]} ->
+              throw({forbidden, Message});
+          {[{<<"unauthorized">>, Message}]} ->
+              throw({unauthorized, Message});
+          {[{_, Message}]} ->
+              throw({unknown_error, Message});
+          Message when is_binary(Message) ->
+              throw({unknown_error, Message})
+      end.
 
 
 rewrite(Req, Db, DDoc) ->
