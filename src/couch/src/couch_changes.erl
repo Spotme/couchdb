@@ -226,7 +226,7 @@ configure_filter("_view", Style, Req, Db) ->
                     DIR = fabric_util:doc_id_and_rev(DDoc),
                     case ViewOptions of
                       [] ->
-                        {{fetch, FilterType, Style, DIR, VName}, []};
+                        {fetch, FilterType, Style, DIR, VName};
                       Options ->
                         {{fetch, FilterType, Style, DIR, VName}, Options}
                       end;
