@@ -89,9 +89,9 @@ handle_changes_req1(#httpd{}=Req, Db) ->
               filter_args = ViewArgs,
               db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
           };
-      Filter ->
+      FilterFun ->
         ChangesArgs = Args0#changes_args{
-            filter_fun = Filter,
+            filter_fun = FilterFun,
             db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
         }
     end,
