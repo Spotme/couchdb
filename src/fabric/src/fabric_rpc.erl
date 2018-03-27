@@ -58,11 +58,12 @@ changes(DbName, Options, StartVector, DbOptions) ->
                 filter_fun={custom, Style, Req, DDoc, FName}
             },
             db_changes(DbName, Options, StartVector, DbOptions, Args1);
-        {fetch, FilterType, Style, {DDocId, Rev}, VName}
-                when FilterType == view orelse FilterType == fast_view ->
+        {fetch, view, Style, {DDocId, Rev}, VName} ->
             {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
-            Args1 = Args0#changes_args{filter_fun={FilterType, Style, DDoc, VName}},
+            Args1 = Args0#changes_args{filter_fun={view, Style, DDoc, VName}},
             db_changes(DbName, Options, StartVector, DbOptions, Args1);
+        {fetch, fast_view, _, _, _} ->
+            view_changes(DbName, Options, StartVector, DbOptions, Args0);
         _ ->
             db_changes(DbName, Options, StartVector, DbOptions, Args0)
     end.
@@ -86,6 +87,42 @@ db_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
         try
             {ok, #cacc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
                 couch_db:changes_since(Db, StartSeq, Enum, Opts, Acc0),
+            rexi:stream_last({complete, [
+                {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
+                {pending, Pending}
+            ]})
+        after
+            couch_db:close(Db)
+        end;
+    Error ->
+        rexi:stream_last(Error)
+    end.
+
+view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
+    DbOpenOptions = ChangeArgs#changes_args.db_open_options ++ DbOptions,
+    case get_or_create_db(DbName, DbOpenOptions) of
+    {ok, Db} ->
+        #changes_args{dir=Dir,
+                      filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
+        StartSeq = calculate_start_seq(Db, node(), StartVector),
+        Enum = fun({_Seq, _Key, DocId}, _Val, Acc) -> 
+                    case couch_db:get_doc_info(Db, DocId) of
+                        {ok, DocInfo} -> changes_enumerator(DocInfo, Acc);
+                        _ ->  {ok, Acc}
+                    end
+                end,
+        Opts = [{dir,Dir}],
+        Acc0 = #cacc{
+          db = Db,
+          seq = StartSeq,
+          args = ChangeArgs,
+          options = Options,
+          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, []),
+          epochs = couch_db:get_epochs(Db)
+        },
+        try
+            {ok, #cacc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
+                couch_mrview:view_changes_since(Db, DDoc, StartSeq, Enum, Opts, Acc0),
             rexi:stream_last({complete, [
                 {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
                 {pending, Pending}
