@@ -203,7 +203,12 @@ configure_filter("_selector", Style, Req, _Db) ->
 configure_filter("_design", Style, _Req, _Db) ->
     {design_docs, Style};
 configure_filter("_view", Style, Req, Db) ->
-    {ViewName, ViewOptions} = get_view_qs(Req),
+    {ViewName, ViewOptions} = case get_view_qs(Req) of
+        {V, Opts} ->
+            {V, Opts};
+        View ->
+            {View, []}
+     end,
     if ViewName /= "" -> ok; true ->
         throw({bad_request, "`view` filter parameter is not provided."})
     end,
