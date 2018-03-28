@@ -200,6 +200,10 @@ handle_message(db_updated, _Worker, Acc) ->
     {ok, Acc#acc{state=updated}};
 handle_message(db_deleted, _Worker, _Acc) ->
     {stop, ok};
+handle_message(index_commit, _Worker, Acc) ->
+    {ok, Acc#acc{state=updated}};
+handle_message(index_delete, _Worker, _Acc) ->
+    {stop, ok};
 handle_message(get_state, _Worker, #acc{state=unset}=Acc) ->
     {ok, Acc#acc{state=waiting}};
 handle_message(get_state, _Worker, Acc) ->
