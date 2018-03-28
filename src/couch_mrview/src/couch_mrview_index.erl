@@ -38,7 +38,7 @@ get(update_options, #mrst{design_opts = Opts}) ->
     IncDeleted = couch_util:get_value(<<"include_deleted">>, Opts, false),
     LocalSeq = couch_util:get_value(<<"local_seq">>, Opts, false),
     SeqIndexed = couch_util:get_value(<<"seq_indexed">>, Opts, false),
-    KeySeqIndexed = couch_util:get_value(<<"keyseq_indexed">>, Opts, false),
+    KeySeqIndexed = couch_util:get_value(<<"keyseq_indexed">>, Opts, SeqIndexed),
     if IncDesign -> [include_design]; true -> [] end
         ++ if LocalSeq -> [local_seq]; true -> [] end
         ++ if KeySeqIndexed -> [keyseq_indexed]; true -> [] end

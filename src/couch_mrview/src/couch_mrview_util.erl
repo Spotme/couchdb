@@ -132,7 +132,7 @@ ddoc_to_mrst(DbName, #doc{id=Id, body={Fields}}) ->
     end,
     {DesignOpts} = proplists:get_value(<<"options">>, Fields, {[]}),
     SeqIndexed = proplists:get_value(<<"seq_indexed">>, DesignOpts, false),
-    KeySeqIndexed = proplists:get_value(<<"keyseq_indexed">>, DesignOpts, false),
+    KeySeqIndexed = proplists:get_value(<<"keyseq_indexed">>, DesignOpts, SeqIndexed),
     IncludeDeleted = couch_util:get_value(<<"include_deleted">>, DesignOpts, false),
     {RawViews} = couch_util:get_value(<<"views">>, Fields, {[]}),
     BySrc = lists:foldl(MakeDict, dict:new(), RawViews),
