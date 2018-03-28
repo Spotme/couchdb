@@ -41,7 +41,9 @@ changes_since_basic_test_() ->
                     fun test_basic_since/1,
                     fun test_basic_count/1,
                     fun test_basic_count_since/1,
-                    fun test_compact/1
+                    fun test_compact/1,
+                    fun test_remove_key/1,
+                    fun test_deleted_doc/1
                 ]
             }
         }
@@ -86,7 +88,8 @@ changes_since_range_count_test_() ->
                 [
                     fun test_range_count/1,
                     fun test_range_count_since/1,
-                    fun test_remove_key/1
+                    fun test_remove_key/1,
+                    fun test_deleted_doc/1
                 ]
             }
         }
@@ -199,12 +202,69 @@ test_remove_key(Db) ->
         ?_assertEqual(Result3, Expect2)
     ].
 
+test_deleted_doc(Db) ->
+    %% add new design doc
+    DDoc = couch_doc:from_json_obj({[
+        {<<"_id">>, <<"_design/deldoc">>},
+        {<<"options">>, {[{<<"include_deleted">>, true},
+                          {<<"seq_indexed">>, true}]}},
+        {<<"views">>, {[
+                {<<"view1">>, {[
+                    {<<"map">>, <<
+                        "function(doc){\n"
+                        "  if (doc.test != undefined)\n"
+                        "    emit(doc._id, doc._id);\n"
+                        "}"
+                     >>}
+                ]}}
+            ]}
+        }
+    ]}),
+    {ok, _} = couch_db:update_doc(Db, DDoc, []),
+    %% add new doc
+    Doc = couch_mrview_test_util:doc(12),
+    {ok, Rev} = couch_db:update_doc(Db, Doc, []),
+    RevStr = couch_doc:rev_to_str(Rev),
+    {ok, _} =  couch_db:ensure_full_commit(Db),
+    {ok, Db1} = couch_db:reopen(Db),
+    Result = run_count_query(Db1, <<"_design/deldoc">>, <<"view1">>, 0, []),
+    %% check new view key
+    Range = [{start_key, <<"12">>}, {end_key, <<"12">>}],
+    Result1 = run_query(Db1, <<"_design/deldoc">>, <<"view1">>, 0, Range),
+    Expect = {ok, []},
+    %% delete doc
+    Doc2 = couch_doc:from_json_obj({[
+                {<<"_id">>, <<"12">>},
+                {<<"_rev">>, RevStr},
+                {<<"test">>, true},
+                {<<"_deleted">>, true}
+    ]}),
+    {ok, _} = couch_db:update_doc(Db1, Doc2, []),
+    {ok, Db2} = couch_db:reopen(Db1),
+    Result2 = run_count_query(Db2, <<"_design/deldoc">>, <<"view1">>, 0, []),
+    %% check new view key
+    Result3 = run_query(Db2, <<"_design/deldoc">>, <<"view1">>, 0, Range),
+    Expect2 = {ok, [
+                {{14, <<"12">>, <<"12">>}, <<"12">>}
+    ]},
+    [
+        ?_assertEqual(Result, 0),
+        ?_assertEqual(Result1, Expect),
+        ?_assertEqual(Result2, 1),
+        ?_assertEqual(Expect2, Result3)
+    ].
+
 run_query(Db, Since, Opts) ->
+    run_query(Db, <<"_design/bar">>, <<"baz">>, Since, Opts).
+
+run_query(Db, DName, VName, Since, Opts) ->
     Fun = fun(KV, Acc) -> {ok, [KV | Acc]} end,
-    {ok, R} = couch_mrview:view_changes_since(Db, <<"_design/bar">>, <<"baz">>,
+    {ok, R} = couch_mrview:view_changes_since(Db, DName, VName,
                                               Since, Fun, Opts, []),
     {ok, lists:reverse(R)}.
 
 run_count_query(Db, Since, Opts) ->
-    couch_mrview:count_view_changes_since(Db, <<"_design/bar">>, <<"baz">>,
-                                          Since, Opts).
+    run_count_query(Db, <<"_design/bar">>, <<"baz">>, Since, Opts).
+
+run_count_query(Db, DName, VName, Since, Opts) ->
+    couch_mrview:count_view_changes_since(Db, DName, VName, Since, Opts).
