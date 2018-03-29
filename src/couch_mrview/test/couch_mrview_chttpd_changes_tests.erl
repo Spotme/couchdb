@@ -30,7 +30,8 @@ view_chage_test_() ->
                 foreach,
                 fun setup/0, fun teardown/1,
                 [
-                    fun normal_changes/1
+                    fun normal_changes/1,
+                    fun change_with_key/1
                 ]
             }
         }
@@ -38,11 +39,21 @@ view_chage_test_() ->
 normal_changes({Db, HostUrl}) ->
     DbName = binary_to_list(Db),
     Url = HostUrl ++ "/" ++ DbName ++ "/_changes?feed=normal&filter=_view&view=bar/baz",
-     {ok, Status, _Headers, BinBody} = test_request:get(Url, []),
+     {ok, 200, _Headers, BinBody} = test_request:get(Url, []),
     {Json} = jiffy:decode(BinBody),
     Changes = proplists:get_value(<<"results">>, Json, []),
     Ids = lists:sort([proplists:get_value(<<"id">>, Change) || {Change} <- Changes]),
     Expected = lists:sort([ list_to_binary(integer_to_list(Id)) || Id <- lists:seq(1, 10)]) ,
+    ?_assertEqual(Expected, Ids).
+
+change_with_key({Db, HostUrl}) ->
+    DbName = binary_to_list(Db),
+    Url = HostUrl ++ "/" ++ DbName ++ "/_changes?feed=normal&filter=_view&view=bar/baz&key=\"3\"",
+    {ok, 200, _Headers, BinBody} = test_request:get(Url, []),
+    {Json} = jiffy:decode(BinBody),
+    Changes = proplists:get_value(<<"results">>, Json, []),
+    Ids = lists:sort([proplists:get_value(<<"id">>, Change) || {Change} <- Changes]),
+    Expected = [<<"3">>] ,
     ?_assertEqual(Expected, Ids).
 
 get_host() ->
