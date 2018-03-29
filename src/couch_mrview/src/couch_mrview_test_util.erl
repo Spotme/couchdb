@@ -48,7 +48,7 @@ make_docs(local, Count) ->
     [local_doc(I) || I <- lists:seq(1, Count)];
 make_docs(_, Count) ->
     [doc(I) || I <- lists:seq(1, Count)].
-                                                                                                                                
+
 ddoc({changes, Opts}) ->
     ViewOpts = case Opts of
         seq_indexed ->
@@ -79,13 +79,6 @@ ddoc(map) ->
         {<<"views">>, {[
             {<<"baz">>, {[
                 {<<"map">>, <<"function(doc) {emit(doc.val, doc.val);}">>}
-            ]}},
-            {<<"tadam">>, {[
-                {<<"map">>, <<
-                    "function(doc) {\n"
-                    "  if (doc.val)\n"
-                    "   emit(doc.val, doc.val);\n"
-                "}">>}
             ]}},
             {<<"bing">>, {[
                 {<<"map">>, <<"function(doc) {}">>}
