@@ -8,10 +8,9 @@
 init_db(DbName, Type) ->
     ok = fabric:create_db(DbName, [?ADMIN_CTX]),
     DDoc = couch_mrview_test_util:ddoc(Type),
-    ?LOG_INFO(["creating that fucking ddoc~p~n", DDoc] ),
-    {ok, _} = fabric:update_docs(DbName, [DDoc], [DDoc]),
+    {ok, _} = fabric:update_docs(DbName, [DDoc], [?ADMIN_CTX]),
     Docs = couch_mrview_test_util:make_docs(Type, 10),
-    {ok, _} = fabric:update_docs(DbName, Docs, []),
+    {ok, _} = fabric:update_docs(DbName, Docs, [?ADMIN_CTX]),
     {ok, DbName}.
 
 setup() ->
@@ -38,10 +37,14 @@ view_chage_test_() ->
     }.
 normal_changes({Db, HostUrl}) ->
     DbName = binary_to_list(Db),
-    Url = HostUrl ++ "/" ++ DbName ++ "/_changes?filter=_view&view=bar/baz",
+    Url = HostUrl ++ "/" ++ DbName ++ "/_changes?feed=normal&filter=_view&view=bar/tadam",
     {ok, Status, _Headers, BinBody} = test_request:get(Url, []),
-    ?LOG_INFO(["got changes ~p~n", BinBody] ),
-    ?_assertEqual(Status, 200).
+    {Json} = jiffy:decode(BinBody),
+    Changes = proplists:get_value(<<"results">>, Json, []),
+    Ids = lists:sort([proplists:get_value(<<"id">>, Change) || {Change} <- Changes]),
+    Expected = lists:sort([ list_to_binary(integer_to_list(Id)) || Id <- lists:seq(1, 10)]) ,
+    ?LOG_INFO(["Ids are ", Ids]),
+    ?_assertEqual(Ids, Expected).
 
 get_host() ->
     Addr = config:get("httpd", "bind_address", "127.0.0.1"),
