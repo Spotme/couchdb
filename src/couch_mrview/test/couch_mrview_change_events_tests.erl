@@ -38,14 +38,16 @@ changes_index_events_test_() ->
                 foreach,
                 fun setup/0, fun teardown/1,
                 [
-                    fun should_emit_index_update_event_/1
+                    fun should_emit_index_update_event_/1,
+                    fun should_emit_index_update_on_delete_event_/1,
+                    fun should_emit_index_delete_event_/1
                 ]
             }
         }
     }.
 
 should_emit_index_update_event_(Db) ->
-    {ok, Doc} = couch_db:open_doc(Db, <<"1">>, [ejson_body, ?ADMIN_CTX]),
+    {ok, Doc} = couch_db:open_doc(Db, <<"1">>, []),
     Ref = make_ref(),
     couch_event:link_listener(
          ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
@@ -59,20 +61,32 @@ should_emit_index_update_event_(Db) ->
     end,
     ?_assertEqual(Result, updated).
 
-% should_emit_index_delete_event_(Db) ->
-%     {ok, Doc} = couch_db:open_doc(Db, <<"1">>, [ejson_body, ?ADMIN_CTX]),
-%     Ref = make_ref(),
-%     couch_event:link_listener(
-%          ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
-%     ),
-%     Res = couch_db:delete_doc(Db, Doc, []),
-%     Result = receive
-%       {deleted, _} = Msg ->
-%           Msg;
-%       Else ->
-%           Else
-%     end,
-%     ?_assertEqual(Result, deleted).
+should_emit_index_update_on_delete_event_(Db) ->
+    {ok, Doc} = couch_db:open_doc(Db, <<"2">>, []),
+    Ref = make_ref(),
+    {ok, Rev} = couch_db:update_doc(Db, Doc, []),
+    RevStr = couch_doc:rev_to_str(Rev),
+    DeletedDoc = couch_doc:from_json_obj({[
+        {<<"_id">>, <<"2">>},
+        {<<"_rev">>, RevStr},
+        {<<"_deleted">>, true}
+    ]}),
+    couch_event:link_listener(
+         ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+    ),
+    {ok, Results} = couch_db:update_docs(Db, [DeletedDoc], []),
+    Result = receive
+      {updated, _} = Msg ->
+          Msg;
+      Else ->
+          Else
+    end,
+    ?_assertEqual(Result, updated).
+
+should_emit_index_delete_event_(Db) ->
+
+    ?_assertEqual(deleted, deleted).
+
 
 changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
     case Msg of
