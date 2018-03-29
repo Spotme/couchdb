@@ -122,16 +122,19 @@ terminate(Reason0, State) ->
             Mod:close(IdxState),
             Reason = Reason0
     end,
+    DbName =  Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     send_all(State#st.waiters, Reason),
     couch_util:shutdown_sync(State#st.updater),
     couch_util:shutdown_sync(State#st.compactor),
     Args = [
-        Mod:get(db_name, IdxState),
-        Mod:get(idx_name, IdxState),
+        DbName,
+        IdxName,
         couch_index_util:hexsig(Mod:get(signature, IdxState)),
         Reason
     ],
     couch_log:info("Closing index for db: ~s idx: ~s sig: ~p because ~r", Args),
+    couch_event:notify(DbName, {index_delete, IdxName}),
     ok.
 
 
@@ -310,6 +313,7 @@ handle_cast(ddoc_updated, State) ->
     end),
     case Shutdown of
         true ->
+
             {stop, {shutdown, ddoc_updated}, State#st{shutdown = true}};
         false ->
             {noreply, State#st{shutdown = false}}
