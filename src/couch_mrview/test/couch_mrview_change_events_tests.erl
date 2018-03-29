@@ -39,7 +39,8 @@ changes_index_events_test_() ->
                 fun setup/0, fun teardown/1,
                 [
                     fun should_emit_index_update_event_/1,
-                    fun should_emit_index_update_on_delete_event_/1
+                    fun should_emit_index_update_on_delete_event_/1,
+                    fun should_emit_index_delete_event_/1
                 ]
             }
         }
@@ -75,12 +76,17 @@ should_emit_index_update_on_delete_event_(Db) ->
     ),
     {ok, Results} = couch_db:update_docs(Db, [DeletedDoc], []),
     Result = receive
-      {deleted, _} = Msg ->
+      {updated, _} = Msg ->
           Msg;
       Else ->
           Else
     end,
     ?_assertEqual(Result, updated).
+
+should_emit_index_delete_event_(Db) ->
+
+    ?_assertEqual(deleted, deleted).
+
 
 changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
     case Msg of
