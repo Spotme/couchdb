@@ -59,7 +59,7 @@ should_emit_index_update_event_(Db) ->
       Else ->
           Else
     end,
-    ?_assertEqual(Result, updated).
+    ?_assertEqual(updated, Result).
 
 should_emit_index_update_on_delete_event_(Db) ->
     {ok, Doc} = couch_db:open_doc(Db, <<"2">>, []),
@@ -81,12 +81,22 @@ should_emit_index_update_on_delete_event_(Db) ->
       Else ->
           Else
     end,
-    ?_assertEqual(Result, updated).
+    ?_assertEqual(updated, Result).
 
 should_emit_index_delete_event_(Db) ->
-
-    ?_assertEqual(deleted, deleted).
-
+    {ok, DDoc} = couch_db:open_doc(Db, <<"_design/bar">>, []),
+    {ok, Rev} = couch_db:update_doc(Db, DDoc, []),
+    DDoc1 = ddoc_disable_seq_index(Rev),
+    Ref = make_ref(),
+    couch_event:link_listener(
+         ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+    ),
+    {ok, _Results} = couch_db:update_docs(Db, [DDoc], []),
+    Result = receive
+      {deleted, _} = Msg ->
+          Msg
+    end,
+    ?_assertEqual(deleted, Result).
 
 changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
     case Msg of
@@ -96,7 +106,29 @@ changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
         {index_delete, _DDocId} ->
             Parent ! deleted,
             {ok, St};
+        {ddoc_updated, DDocId} ->
+            Parent ! ddoc_updated,
+            {ok, St};
         Else ->
-          Parent ! Else,
-          stop
+            Parent ! Else,
+            stop
     end.
+
+% Helpers
+
+ddoc_disable_seq_index(Rev) ->
+    ViewOpts = [{<<"seq_indexed">>, false}],
+    RevStr = couch_doc:rev_to_str(Rev),
+    couch_doc:from_json_obj({[
+        {<<"_id">>, <<"_design/bar">>},
+        {<<"_rev">>, RevStr},
+        {<<"options">>, {ViewOpts}},
+        {<<"views">>, {[
+            {<<"baz">>, {[
+                {
+                    <<"map">>,
+                    <<"function(doc) {if(doc.val){emit(doc.val.toString(), doc.val);}}">>
+                }
+            ]}}
+        ]}}
+    ]}).
