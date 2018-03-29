@@ -79,6 +79,7 @@ get_compactor_pid(Pid) ->
 
 init({Mod, IdxState}) ->
     DbName = Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     erlang:send_after(?CHECK_INTERVAL, self(), maybe_close),
     Resp = couch_util:with_db(DbName, fun(Db) ->
         case Mod:open(Db, IdxState) of
@@ -100,11 +101,12 @@ init({Mod, IdxState}) ->
                 compactor=CPid
             },
             Args = [
-                Mod:get(db_name, IdxState),
-                Mod:get(idx_name, IdxState),
+                DbName,
+                IdxName,
                 couch_index_util:hexsig(Mod:get(signature, IdxState))
             ],
             couch_log:info("Opening index for db: ~s idx: ~s sig: ~p", Args),
+            couch_event:notify(DbName, {index_create, IdxName}),
             proc_lib:init_ack({ok, self()}),
             gen_server:enter_loop(?MODULE, [], State);
         Other ->
