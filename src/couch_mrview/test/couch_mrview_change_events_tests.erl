@@ -40,6 +40,7 @@ changes_index_events_test_() ->
                 [
                     fun should_emit_index_update_event_/1,
                     fun should_emit_index_update_on_delete_event_/1,
+                    fun should_emit_index_create_event_/1,
                     fun should_emit_index_delete_event_/1
                 ]
             }
@@ -48,9 +49,8 @@ changes_index_events_test_() ->
 
 should_emit_index_update_event_(Db) ->
     {ok, Doc} = couch_db:open_doc(Db, <<"1">>, []),
-    Ref = make_ref(),
     couch_event:link_listener(
-         ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+         ?MODULE, changes_view_event, {self(), nil}, [{dbname, couch_db:name(Db)}]
     ),
     {ok, _Rev} = couch_db:update_doc(Db, Doc, []),
     Result = receive
@@ -63,7 +63,6 @@ should_emit_index_update_event_(Db) ->
 
 should_emit_index_update_on_delete_event_(Db) ->
     {ok, Doc} = couch_db:open_doc(Db, <<"2">>, []),
-    Ref = make_ref(),
     {ok, Rev} = couch_db:update_doc(Db, Doc, []),
     RevStr = couch_doc:rev_to_str(Rev),
     DeletedDoc = couch_doc:from_json_obj({[
@@ -72,9 +71,9 @@ should_emit_index_update_on_delete_event_(Db) ->
         {<<"_deleted">>, true}
     ]}),
     couch_event:link_listener(
-         ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+         ?MODULE, changes_view_event, {self(), nil}, [{dbname, couch_db:name(Db)}]
     ),
-    {ok, Results} = couch_db:update_docs(Db, [DeletedDoc], []),
+    {ok, _Results} = couch_db:update_docs(Db, [DeletedDoc], []),
     Result = receive
       {updated, _} = Msg ->
           Msg;
@@ -83,22 +82,41 @@ should_emit_index_update_on_delete_event_(Db) ->
     end,
     ?_assertEqual(updated, Result).
 
-should_emit_index_delete_event_(Db) ->
+should_emit_index_create_event_(Db) ->
     {ok, DDoc} = couch_db:open_doc(Db, <<"_design/bar">>, []),
     {ok, Rev} = couch_db:update_doc(Db, DDoc, []),
-    DDoc1 = ddoc_disable_seq_index(Rev),
-    Ref = make_ref(),
+    DDoc1 = ddoc_update(Rev),
     couch_event:link_listener(
-         ?MODULE, changes_view_event, {self(), Ref}, [{dbname, couch_db:name(Db)}]
+         ?MODULE, changes_view_event, {self(), nil}, [{dbname, couch_db:name(Db)}]
     ),
-    {ok, _Results} = couch_db:update_docs(Db, [DDoc], []),
+    {ok, _Results} = couch_db:update_docs(Db, [DDoc1], []),
+    _Res1 = couch_mrview:refresh(couch_db:name(Db), DDoc1),
+    Result = receive
+      {created, _} = Msg ->
+          Msg;
+      Else ->
+          Else
+    end,
+    ?_assertEqual(created, Result).
+
+should_emit_index_delete_event_(Db) ->
+    {ok, DDoc} = couch_db:open_doc(Db, <<"_design/bar">>, []),
+    Res1 = couch_mrview:refresh(couch_db:name(Db), DDoc),
+    {ok, Rev} = couch_db:update_doc(Db, DDoc, []),
+    couch_event:link_listener(
+         ?MODULE, changes_view_event, {self(), nil}, [{dbname, couch_db:name(Db)}]
+    ),
+    DeletedDDoc = ddoc_delete(Rev),
+    Res1 = couch_mrview:refresh(couch_db:name(Db), DeletedDDoc),
     Result = receive
       {deleted, _} = Msg ->
-          Msg
+          Msg;
+      Else ->
+          Else
     end,
     ?_assertEqual(deleted, Result).
 
-changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
+changes_view_event(_DbName, Msg, {Parent, _Ref}=St) ->
     case Msg of
         {index_commit, _DDocId} ->
             Parent ! updated,
@@ -106,8 +124,8 @@ changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
         {index_delete, _DDocId} ->
             Parent ! deleted,
             {ok, St};
-        {ddoc_updated, DDocId} ->
-            Parent ! ddoc_updated,
+        {index_create, _DDocId} ->
+            Parent ! created,
             {ok, St};
         Else ->
             Parent ! Else,
@@ -115,19 +133,38 @@ changes_view_event(_DbName, Msg, {Parent, Ref}=St) ->
     end.
 
 % Helpers
+ddoc_update(Rev) ->
+  ViewOpts = [{<<"seq_indexed">>, false},
+              {<<"keyseq_indexed">>, false}],
+  RevStr = couch_doc:rev_to_str(Rev),
+  couch_doc:from_json_obj({[
+      {<<"_id">>, <<"_design/bar">>},
+      {<<"_rev">>, RevStr},
+      {<<"options">>, {ViewOpts}},
+      {<<"views">>, {[
+          {<<"baz">>, {[
+              {
+                  <<"map">>,
+                  <<"function(doc) {if (doc.val){emit(doc.val.toString(), doc.val);}}">>
+              }
+          ]}}
+      ]}}
+  ]}).
 
-ddoc_disable_seq_index(Rev) ->
-    ViewOpts = [{<<"seq_indexed">>, false}],
+ddoc_delete(Rev) ->
+    ViewOpts = [{<<"seq_indexed">>, true},
+                {<<"keyseq_indexed">>, true}],
     RevStr = couch_doc:rev_to_str(Rev),
     couch_doc:from_json_obj({[
         {<<"_id">>, <<"_design/bar">>},
         {<<"_rev">>, RevStr},
+        {<<"_deleted">>, true},
         {<<"options">>, {ViewOpts}},
         {<<"views">>, {[
             {<<"baz">>, {[
                 {
                     <<"map">>,
-                    <<"function(doc) {if(doc.val){emit(doc.val.toString(), doc.val);}}">>
+                    <<"function(doc) {emit(doc.val.toString(), doc.val);}">>
                 }
             ]}}
         ]}}
