@@ -282,11 +282,12 @@ handle_cast(delete, State) ->
     {stop, normal, State};
 handle_cast({ddoc_updated, DDocResult}, State) ->
     #st{mod = Mod, idx_state = IdxState} = State,
+    DbName = Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     Shutdown = case DDocResult of
         {not_found, deleted} ->
             true;
         {ok, DDoc} ->
-            DbName = Mod:get(db_name, IdxState),
             couch_util:with_db(DbName, fun(Db) ->
                 {ok, NewIdxState} = Mod:init(Db, DDoc),
                 Mod:get(signature, NewIdxState) =/= Mod:get(signature, IdxState)
@@ -296,6 +297,7 @@ handle_cast({ddoc_updated, DDocResult}, State) ->
         true ->
             {stop, {shutdown, ddoc_updated}, State#st{shutdown = true}};
         false ->
+            couch_event:notify(DbName, {index_delete, IdxName}),
             {noreply, State#st{shutdown = false}}
     end;
 handle_cast(ddoc_updated, State) ->
@@ -313,9 +315,9 @@ handle_cast(ddoc_updated, State) ->
     end),
     case Shutdown of
         true ->
-
             {stop, {shutdown, ddoc_updated}, State#st{shutdown = true}};
         false ->
+            couch_event:notify(DbName, {index_delete, DDocId}),
             {noreply, State#st{shutdown = false}}
     end;
 handle_cast(_Mesg, State) ->
