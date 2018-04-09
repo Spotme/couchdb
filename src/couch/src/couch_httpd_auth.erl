@@ -517,13 +517,20 @@ key_authentication_handler(Req) ->
       undefined ->
         Req;
       AuthKey ->
-        [DbName, Key] = key_authentication_parse_auth_key(AuthKey),
+        [DbName, Key] = case key_authentication_parse_auth_key(AuthKey) of
+				  [DName, K] ->
+						[DName, K];
+					_ ->
+						[<<"not_found">>, <<"invalid key">>]
+				end,
 				ReqDbName = case Req#httpd.path_parts of
 					[] ->
 						throw({unauthorized, <<"invalid key">>});
 					[Name|_] ->
 						Name;
 					undefined ->
+						throw({unauthorized, <<"invalid key">>});
+					_ ->
 						throw({unauthorized, <<"invalid key">>})
 				end,
 
