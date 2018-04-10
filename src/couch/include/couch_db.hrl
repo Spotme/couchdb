@@ -20,9 +20,6 @@
 
 -define(REWRITE_COUNT, couch_rewrite_count).
 
--define(LOG_INFO(V), couch_log:info("~p ~p/~p Line Number: ~p -------- ~p",
-                     [?FILE, ?FUNCTION_NAME, ?FUNCTION_ARITY, ?LINE, V])).
-
 -define(JSON_ENCODE(V), couch_util:json_encode(V)).
 -define(JSON_DECODE(V), couch_util:json_decode(V)).
 
