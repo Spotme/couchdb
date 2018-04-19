@@ -1701,6 +1701,9 @@ prep_and_validate_read(#db{revs_limit=RevsLimit}=Db, Id, Deleted, {Pos, Revs}, D
     case lists:member(<<"_admin">>, Db#db.user_ctx#user_ctx.roles) of
       true ->
         DocAfter;
+      false when Db#db.user_ctx#user_ctx.roles =:= [], Db#db.user_ctx#user_ctx.name =:= null,
+                 Db#db.user_ctx#user_ctx.handler =:= undefined ->
+        DocAfter;
       false ->
         if Db#db.should_load_validate_doc_read_funs =:= true ->
               Db2 = Db#db{should_load_validate_doc_read_funs=false},
