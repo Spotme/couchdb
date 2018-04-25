@@ -30,7 +30,7 @@
 
 % Views
 -export([all_docs/4, all_docs/5, changes/4, query_view/3, query_view/4,
-    query_view/6, query_view/7, get_view_group_info/2, end_changes/0]).
+    query_view/6, query_view/7, get_view_group_info/2, end_changes/0, get_view_info/3]).
 
 % miscellany
 -export([design_docs/1, reset_validation_funs/1, cleanup_index_files/0,
