@@ -297,8 +297,14 @@ group_info(DbName, DDocId, DbOptions) ->
 view_info(DbName, DDocId, VName) ->
     view_info(DbName, DDocId, VName, []).
 
-view_info(DbName, DDocId, VName, DbOptions) ->
-    with_db(DbName, DbOptions, {couch_mrview, get_view_info, [DDocId, VName]}).
+view_info(DbName, {DDocId, Rev}, VName, DbOptions) ->
+    couch_log:info("ddoc is ~p~n", [{DDocId, Rev}]),
+    {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
+    view_info(DbName, DDoc, VName, DbOptions);
+view_info(DbName, DDoc, VName, DbOptions) ->
+    {ok, Db} = get_or_create_db(DbName, DbOptions),
+    Reply = couch_mrview:get_view_info(Db, DDoc, VName),
+    rexi:reply(Reply).
 
 reset_validation_funs(DbName) ->
     case get_or_create_db(DbName, []) of

@@ -334,7 +334,6 @@ get_info(Db, DDoc) ->
     {ok, Pid} = couch_index_server:get_index(couch_mrview_index, Db, DDoc),
     couch_index:get_info(Pid).
 
-
 trigger_update(Db, DDoc) ->
     trigger_update(Db, DDoc, couch_db:get_update_seq(Db)).
 
@@ -346,10 +345,8 @@ trigger_update(Db, DDoc, UpdateSeq) ->
 get_view_info(Db, DDoc, VName) ->
     {ok, {_, View, _}, _, _Args} = couch_mrview_util:get_view(Db, DDoc, VName,
                                                               #mrargs{}),
-
     %% get the total number of rows
     {ok, TotalRows} =  couch_mrview_util:get_row_count(View),
-
     %% get the total number of sequence logged in this view
     SeqBtree = View#mrview.seq_btree,
     {ok, TotalSeqs} = case SeqBtree of
@@ -357,7 +354,6 @@ get_view_info(Db, DDoc, VName) ->
         _ ->
             couch_btree:full_reduce(SeqBtree)
     end,
-
     {ok, [{seq_indexed, View#mrview.seq_indexed},
           {update_seq, View#mrview.update_seq},
           {purge_seq, View#mrview.purge_seq},

@@ -17,17 +17,19 @@
 -include_lib("fabric/include/fabric.hrl").
 -include_lib("mem3/include/mem3.hrl").
 -include_lib("couch/include/couch_db.hrl").
+-include_lib("couch_mrview/include/couch_mrview.hrl").
 
 go(DbName, GroupId, VName) when is_binary(GroupId) ->
-    {ok, DDoc} = fabric:open_doc(DbName, GroupId, [?ADMIN_CTX]),
+    {ok, DDoc} = fabric:open_doc(DbName,  <<"_design/", GroupId/binary>>, []),
     go(DbName, DDoc, VName);
 
-go(DbName, #doc{id=DDocId}, VName) ->
-    Shards = mem3:shards(DbName),
-    Ushards = mem3:ushards(DbName),
-    Workers = fabric_util:submit_jobs(Shards, view_info, [DDocId, VName]),
+go(DbName, DDoc, VName) ->
+    Shards = fabric_view:get_shards(DbName, #mrargs{view_type=map}),
+    DocIdAndRev = fabric_util:doc_id_and_rev(DDoc),
+    fabric_view:maybe_update_others(DbName, DocIdAndRev, Shards, VName, #mrargs{}),
+    Workers = fabric_util:submit_jobs(Shards, fabric_rpc, view_info, [DocIdAndRev, VName]),
     RexiMon = fabric_util:create_monitors(Shards),
-    Acc = acc_init(Workers, Ushards),
+    Acc = acc_init(Workers, Shards),
     try fabric_util:recv(Workers, #shard.ref, fun handle_message/3, Acc) of
     {timeout, {WorkersDict, _, _}} ->
         DefunctWorkers = fabric_util:remove_done_workers(WorkersDict, nil),
@@ -58,6 +60,7 @@ handle_message({rexi_EXIT, Reason}, Shard, {Counters, Acc, Ushards}) ->
     end;
 
 handle_message({ok, Info}, Shard, {Counters0, Acc, Ushards}) ->
+    couch_log:info("got info ~p~n", [Info]),
     case fabric_dict:lookup_element(Shard, Counters0) of
     undefined ->
         % already heard from other node in this range
@@ -75,7 +78,8 @@ handle_message({ok, Info}, Shard, {Counters0, Acc, Ushards}) ->
             {stop, Results}
         end
     end;
-handle_message(_, _, Acc) ->
+handle_message(_Else, _, Acc) ->
+    couch_log:info("got else ~p~n", [_Else]),
     {ok, Acc}.
 
 acc_init(Workers, Ushards) ->
@@ -98,24 +102,13 @@ merge_results(Info) ->
         orddict:new(), Info),
     orddict:fold(fun
         (seq_indexed, X, Acc) ->
-            [{seq_indexed, lists:sum(X)} | Acc];
+            [{seq_indexed, hd(X)} | Acc];
         (update_seq, X, Acc) ->
             [{update_seq, lists:sum(X)} | Acc];
         (purge_seq, X, Acc) ->
             [{purge_seq, lists:sum(X)} | Acc];
         (total_rows, X, Acc) ->
             [{total_rows, lists:sum(X)} | Acc];
-        (total_seqs, X, Acc) ->
-            [{total_seqs, lists:sum(X)} | Acc];
         (_, _, Acc) ->
             Acc
-    end, [], Dict).
-
-merge_object(Objects) ->
-    Dict = lists:foldl(fun({Props}, D) ->
-        lists:foldl(fun({K,V},D0) -> orddict:append(K,V,D0) end, D, Props)
-    end, orddict:new(), Objects),
-    orddict:fold(fun
-        (Key, X, Acc) ->
-            [{Key, lists:sum(X)} | Acc]
     end, [], Dict).
