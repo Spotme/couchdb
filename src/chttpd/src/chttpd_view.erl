@@ -84,6 +84,12 @@ handle_view_req(#httpd{method='GET',
     LastSeq = proplists:get_value(update_seq, GroupInfoList, 0),
     chttpd:send_json(Req, LastSeq);
 
+handle_view_req(#httpd{method='GET',
+    path_parts=[_, _, _, _, ViewName, <<"_info">>]}=Req, Db, DDoc) ->
+    chttpd:validate_ctype(Req, "application/json"),
+    {ok, Info} = fabric:get_view_info(Db, DDoc, ViewName),
+    chttpd:send_json(Req, {Info});
+
 handle_view_req(Req, _Db, _DDoc) ->
     chttpd:send_method_not_allowed(Req, "GET,POST,HEAD").
 
