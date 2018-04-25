@@ -78,9 +78,9 @@ handle_view_req(#httpd{method='POST',
     end;
 
 handle_view_req(#httpd{method='GET',
-        path_parts=[_, _, _, _, _ViewName, <<"_last_seq">>]}=Req, Db, DDoc) ->
+        path_parts=[_, _, _, _, ViewName, <<"_last_seq">>]}=Req, Db, DDoc) ->
     chttpd:validate_ctype(Req, "application/json"),
-    {ok, GroupInfoList} = fabric:get_view_group_info(Db, DDoc),
+    {ok, GroupInfoList} = fabric:get_view_info(Db, DDoc, ViewName),
     LastSeq = proplists:get_value(update_seq, GroupInfoList, 0),
     chttpd:send_json(Req, LastSeq);
 

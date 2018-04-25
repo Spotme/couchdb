@@ -15,7 +15,7 @@
 -export([get_db_info/1, get_doc_count/1, get_update_seq/1]).
 -export([open_doc/3, open_revs/4, get_doc_info/3, get_full_doc_info/3,
     get_missing_revs/2, get_missing_revs/3, update_docs/3]).
--export([all_docs/3, changes/3, map_view/4, reduce_view/4, group_info/2]).
+-export([all_docs/3, changes/3, map_view/4, reduce_view/4, group_info/2, view_info/3]).
 -export([create_db/1, create_db/2, delete_db/1, reset_validation_funs/1,
     set_security/3, set_revs_limit/3, create_shard_db_doc/2,
     delete_shard_db_doc/2]).
@@ -23,7 +23,8 @@
 -export([compact/1, compact/2]).
 
 -export([get_db_info/2, get_doc_count/2, get_update_seq/2,
-         changes/4, map_view/5, reduce_view/5, group_info/3, update_mrview/4]).
+         changes/4, map_view/5, reduce_view/5, group_info/3, update_mrview/4,
+         view_info/4]).
 
 -include_lib("fabric/include/fabric.hrl").
 -include_lib("couch/include/couch_db.hrl").
@@ -292,6 +293,12 @@ group_info(DbName, DDocId) ->
 
 group_info(DbName, DDocId, DbOptions) ->
     with_db(DbName, DbOptions, {couch_mrview, get_info, [DDocId]}).
+
+view_info(DbName, DDocId, VName) ->
+    view_info(DbName, DDocId, VName, []).
+
+view_info(DbName, DDocId, VName, DbOptions) ->
+    with_db(DbName, DbOptions, {couch_mrview, get_view_info, [DDocId, VName]}).
 
 reset_validation_funs(DbName) ->
     case get_or_create_db(DbName, []) of
