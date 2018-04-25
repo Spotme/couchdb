@@ -70,9 +70,8 @@ handle_message({ok, Info}, Shard, {Counters0, Acc, Ushards}) ->
         false ->
             {ok, {Counters, NewAcc, Ushards}};
         true ->
-            Pending = aggregate_pending(NewAcc),
             Infos = get_infos(NewAcc),
-            Results = [{updates_pending, {Pending}} | merge_results(Infos)],
+            Results = merge_results(Infos),
             {stop, Results}
         end
     end;
@@ -93,28 +92,6 @@ append_result(Info, #shard{name = Name, node = Node}, Acc, Ushards) ->
 get_infos(Acc) ->
     Values = [V || {_, V} <- dict:to_list(Acc)],
     lists:flatten([Info || {_Node, _Pref, Info} <- lists:flatten(Values)]).
-
-aggregate_pending(Dict) ->
-    {Preferred, Total, Minimum} =
-        dict:fold(fun(_Name, Results, {P, T, M}) ->
-            {Preferred, Total, Minimum} = calculate_pending(Results),
-            {P + Preferred, T + Total, M + Minimum}
-        end, {0, 0, 0}, Dict),
-    [
-        {minimum, Minimum},
-        {preferred, Preferred},
-        {total, Total}
-    ].
-
-calculate_pending(Results) ->
-    lists:foldl(fun
-    ({_Node, true, Info}, {P, T, V}) ->
-       Pending = couch_util:get_value(pending_updates, Info),
-       {P + Pending, T + Pending, min(Pending, V)};
-    ({_Node, false, Info}, {P, T, V}) ->
-       Pending = couch_util:get_value(pending_updates, Info),
-       {P, T + Pending, min(Pending, V)}
-    end, {0, 0, infinity}, Results).
 
 merge_results(Info) ->
     Dict = lists:foldl(fun({K,V},D0) -> orddict:append(K,V,D0) end,
