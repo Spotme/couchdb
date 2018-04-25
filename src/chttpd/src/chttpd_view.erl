@@ -77,7 +77,7 @@ handle_view_req(#httpd{method='POST',
             throw({bad_request, "`keys` and `queries` are mutually exclusive"})
     end;
 
-handle_view_req(#httpd{method='POST',
+handle_view_req(#httpd{method='GET',
         path_parts=[_, _, _, _, _ViewName, <<"_last_seq">>]}=Req, Db, DDoc) ->
     chttpd:validate_ctype(Req, "application/json"),
     {ok, GroupInfoList} = fabric:get_view_group_info(Db, DDoc),
