@@ -383,7 +383,12 @@ get_view_changes_count(View) ->
     end,
     case {SBtree, KSBtree} of
         {#btree{}, #btree{}} ->
-            {ok, Count*2};
+            case Count of
+              {Seq0, _} ->
+                {ok, Seq0*2};
+              Seq1 ->
+                {ok, Seq1*2}
+            end;
         _ ->
             {ok, Count}
     end.
