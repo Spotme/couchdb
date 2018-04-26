@@ -78,7 +78,6 @@ handle_message({ok, Info}, Shard, {Counters0, Acc, Ushards}) ->
         end
     end;
 handle_message(_Else, _, Acc) ->
-    couch_log:info("got else ~p~n", [_Else]),
     {ok, Acc}.
 
 acc_init(Workers, Ushards) ->

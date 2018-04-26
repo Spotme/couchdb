@@ -298,7 +298,6 @@ view_info(DbName, DDocId, VName) ->
     view_info(DbName, DDocId, VName, []).
 
 view_info(DbName, {DDocId, Rev}, VName, DbOptions) ->
-    couch_log:info("ddoc is ~p~n", [{DDocId, Rev}]),
     {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
     view_info(DbName, DDoc, VName, DbOptions);
 view_info(DbName, DDoc, VName, DbOptions) ->
