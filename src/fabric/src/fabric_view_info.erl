@@ -60,7 +60,6 @@ handle_message({rexi_EXIT, Reason}, Shard, {Counters, Acc, Ushards}) ->
     end;
 
 handle_message({ok, Info}, Shard, {Counters0, Acc, Ushards}) ->
-    couch_log:info("got info ~p~n", [Info]),
     case fabric_dict:lookup_element(Shard, Counters0) of
     undefined ->
         % already heard from other node in this range
@@ -89,9 +88,13 @@ acc_init(Workers, Ushards) ->
 is_complete(Counters) ->
     not fabric_dict:any(nil, Counters).
 
-append_result(Info, #shard{name = Name, node = Node}, Acc, Ushards) ->
+append_result(Info0, #shard{name = Name, range = Range, node = Node}, Acc, Ushards) ->
+    Seq = proplists:get_value(update_seq, Info0),
+    PurgeSeq = proplists:get_value(purge_seq, Info0),
+    Info1 = lists:keyreplace(update_seq, 1, Info0, {update_seq, {Name, Range, Seq}}),
+    Info2 = lists:keyreplace(purge_seq, 1, Info1, {purge_seq, {Name, Range, PurgeSeq}}),
     IsPreferred = sets:is_element({Name, Node}, Ushards),
-    dict:append(Name, {Node, IsPreferred, Info}, Acc).
+    dict:append(Name, {Node, IsPreferred, Info2}, Acc).
 
 get_infos(Acc) ->
     Values = [V || {_, V} <- dict:to_list(Acc)],
@@ -100,15 +103,22 @@ get_infos(Acc) ->
 merge_results(Info) ->
     Dict = lists:foldl(fun({K,V},D0) -> orddict:append(K,V,D0) end,
         orddict:new(), Info),
+
+
     orddict:fold(fun
         (seq_indexed, X, Acc) ->
             [{seq_indexed, hd(X)} | Acc];
         (update_seq, X, Acc) ->
-            [{update_seq, lists:sum(X)} | Acc];
+            [{update_seq, pack_seqs(X)} | Acc];
         (purge_seq, X, Acc) ->
-            [{purge_seq, lists:sum(X)} | Acc];
+            [{purge_seq, pack_seqs(X)} | Acc];
         (total_rows, X, Acc) ->
             [{total_rows, lists:sum(X)} | Acc];
         (_, _, Acc) ->
             Acc
     end, [], Dict).
+
+pack_seqs(SeqList) ->
+    SeqSum = lists:sum([S || {_,_,S} <- SeqList]),
+    Opaque = couch_util:encodeBase64Url(term_to_binary(SeqList, [compressed])),
+    ?l2b([integer_to_list(SeqSum), $-, Opaque]).
