@@ -103,8 +103,6 @@ get_infos(Acc) ->
 merge_results(Info) ->
     Dict = lists:foldl(fun({K,V},D0) -> orddict:append(K,V,D0) end,
         orddict:new(), Info),
-
-
     orddict:fold(fun
         (seq_indexed, X, Acc) ->
             [{seq_indexed, hd(X)} | Acc];
