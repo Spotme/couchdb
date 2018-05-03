@@ -148,8 +148,8 @@ db_close(DbName) ->
     catch couch_db:close(DbName).
 
 get_view_info(#httpdb{} = Db, DDocId, ViewName) ->
-    Path = iolist_to_binary([DDocId, "/_view/", ViewName, "/_info"]),
-    send_req(Db, 
+    Path = lists:flatten([DDocId, "/_view/", ViewName, "/_info"]),
+    send_req(Db,
             [{path, Path}],
             fun(200, _, {Props}) -> {ok, Props} end
     );
