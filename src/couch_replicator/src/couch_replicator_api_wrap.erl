@@ -148,7 +148,7 @@ db_close(DbName) ->
     catch couch_db:close(DbName).
 
 get_view_info(#httpdb{} = Db, DDocId, ViewName) ->
-    Path = lists:flatten([DDocId, "/_view/", ViewName, "/_info"]),
+    Path = lists:flatten([DDocId, "/_view/", ViewName, "/_last_seq"]),
     send_req(Db,
             [{path, Path}],
             fun(200, _, {Props}) -> {ok, Props} end
