@@ -599,7 +599,14 @@ init_state(Rep) ->
     StartSeq1 = get_value(since_seq, Options, StartSeq0),
     StartSeq = {0, StartSeq1},
 
-    SourceSeq = get_value(<<"update_seq">>, SourceInfo, ?LOWEST_SEQ),
+    SourceSeq = case Type of
+                    db ->
+                        get_value(<<"update_seq">>, SourceInfo, ?LOWEST_SEQ);
+                    view ->
+                        {DDoc, VName} = View,
+                        {ok, VInfo} = couch_replicator_api_wrap:get_view_info(Source, DDoc, VName),
+                        get_value(<<"update_seq">>, VInfo, ?LOWEST_SEQ)
+                end,
 
     #doc{body={CheckpointHistory}} = SourceLog,
     State = #rep_state{

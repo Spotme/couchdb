@@ -32,7 +32,6 @@
 -export([changes_key_opts/2]).
 -export([fold_changes/4]).
 -export([to_key_seq/1]).
--export([seq_index_less_fun/2]).
 
 -define(MOD, couch_mrview_index).
 -define(GET_VIEW_RETRY_COUNT, 1).
@@ -290,7 +289,6 @@ init_state(Db, Fd, State, Header) ->
 open_view(Db, Fd, Lang, ViewState, View) ->
     ReduceFun = make_reduce_fun(Lang, View#mrview.reduce_funs),
     LessFun = maybe_define_less_fun(View),
-    SeqLessFun = fun seq_index_less_fun/2,
     Compression = couch_db:compression(Db),
     BTState = get_key_btree_state(ViewState),
     ViewBtOpts = [
@@ -303,8 +301,7 @@ open_view(Db, Fd, Lang, ViewState, View) ->
     BySeqReduceFun = make_seq_reduce_fun(),
     {ok, SeqBtree} = if View#mrview.seq_indexed ->
         SeqBTState = get_seq_btree_state(ViewState),
-        ViewSeqBtOpts = [{less, SeqLessFun},
-                         {reduce, BySeqReduceFun},
+        ViewSeqBtOpts = [{reduce, BySeqReduceFun},
                          {compression, Compression}],
 
         couch_btree:open(SeqBTState, Fd, ViewSeqBtOpts);
@@ -383,7 +380,12 @@ get_view_changes_count(View) ->
     end,
     case {SBtree, KSBtree} of
         {#btree{}, #btree{}} ->
-            {ok, Count*2};
+            case Count of
+              {Seq0, _} ->
+                {ok, Seq0*2};
+              Seq1 ->
+                {ok, Seq1*2}
+            end;
         _ ->
             {ok, Count}
     end.
@@ -1108,44 +1110,6 @@ maybe_define_less_fun(#mrview{options = Options}) ->
         <<"raw">> -> undefined;
         _ -> fun couch_ejson_compare:less_json_ids/2
     end.
-
-seq_index_less_fun(A, B) ->
-    A1 = normalize_tuple(A),
-    B1 = normalize_tuple(B),
-    A1 < B1.
-
-normalize_tuple({A, B}) when is_atom(A), is_atom(B) ->
-    A1 = ?l2b(atom_to_list(A)),
-    B1 = ?l2b(atom_to_list(B)),
-    {A1, B1};
-normalize_tuple({A, B}) when is_atom(A) ->
-    A1 = ?l2b(atom_to_list(A)),
-    normalize_tuple({A1, B});
-normalize_tuple({A, B}) when is_atom(B) ->
-    B1 = ?l2b(atom_to_list(B)),
-    normalize_tuple({A, B1});
-normalize_tuple({A, B}) when is_integer(A), is_integer(B) ->
-    A1 = ?l2b(integer_to_list(A)),
-    B1 = ?l2b(integer_to_list(B)),
-    {A1, B1};
-normalize_tuple({A, B}) when is_integer(A) ->
-    A1 = ?l2b(integer_to_list(A)),
-    normalize_tuple({A1, B});
-normalize_tuple({A, B}) when is_integer(B) ->
-    B1 = ?l2b(integer_to_list(B)),
-    normalize_tuple({A, B1});
-normalize_tuple({A, B}) when is_float(A), is_float(B) ->
-    A1 = ?l2b(float_to_list(A, [{decimals, 10}, compact])),
-    B1 = ?l2b(float_to_list(B, [{decimals, 10}, compact])),
-    {A1, B1};
-normalize_tuple({A, B}) when is_float(A) ->
-    A1 = ?l2b(float_to_list(A, [{decimals, 10}, compact])),
-    normalize_tuple({A1, B});
-normalize_tuple({A, B}) when is_float(B) ->
-    B1 = ?l2b(float_to_list(B, [{decimals, 10}, compact])),
-    normalize_tuple({A, B1});
-normalize_tuple({A, B}) ->
-    {A, B}.
 
 
 count_reduce(reduce, KVs) ->
