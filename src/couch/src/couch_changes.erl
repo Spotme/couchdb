@@ -203,7 +203,12 @@ configure_filter("_selector", Style, Req, _Db) ->
 configure_filter("_design", Style, _Req, _Db) ->
     {design_docs, Style};
 configure_filter("_view", Style, Req, Db) ->
-    ViewName = get_view_qs(Req),
+    {ViewName, ViewOptions} = case get_view_qs(Req) of
+        {V, Opts} ->
+            {V, Opts};
+        View ->
+            {View, []}
+     end,
     if ViewName /= "" -> ok; true ->
         throw({bad_request, "`view` filter parameter is not provided."})
     end,
@@ -224,7 +229,12 @@ configure_filter("_view", Style, Req, Db) ->
             case couch_db:is_clustered(Db) of
                 true ->
                     DIR = fabric_util:doc_id_and_rev(DDoc),
-                    {fetch, FilterType, Style, DIR, VName};
+                    case ViewOptions of
+                      [] ->
+                        {fetch, FilterType, Style, DIR, VName};
+                      Options ->
+                        {{fetch, FilterType, Style, DIR, VName}, Options}
+                      end;
                 false ->
                     {FilterType, Style, DDoc, VName}
             end;
@@ -284,10 +294,13 @@ filter(_Db, DocInfo, {design_docs, Style}) ->
             []
     end;
 filter(Db, DocInfo, {FilterType, Style, DDoc, VName})
-        when FilterType == view; FilterType == fast_view ->
+        when FilterType == view ->
     Docs = open_revs(Db, DocInfo, Style),
     {ok, Passes} = couch_query_servers:filter_view(DDoc, VName, Docs),
     filter_revs(Passes, Docs);
+filter(_Db, DocInfo, {FilterType, Style, _DDoc, _VName})
+        when FilterType == fast_view ->
+    apply_style(DocInfo, Style);
 filter(Db, DocInfo, {custom, Style, Req0, DDoc, FName}) ->
     Req = case Req0 of
         {json_req, _} -> Req0;
@@ -331,7 +344,14 @@ get_view_qs({json_req, {Props}}) ->
     {Query} = couch_util:get_value(<<"query">>, Props, {[]}),
     binary_to_list(couch_util:get_value(<<"view">>, Query, ""));
 get_view_qs(Req) ->
-    couch_httpd:qs_value(Req, "view", "").
+    Query = couch_httpd:qs(Req),
+    ViewName = couch_httpd:qs_value(Req, "view", ""),
+    case parse_view_options(Query, []) of
+      [] ->
+        {ViewName, []};
+      ViewOptions ->
+        {ViewName, ViewOptions}
+      end.
 
 get_doc_ids({json_req, {Props}}) ->
     check_docids(couch_util:get_value(<<"doc_ids">>, Props));
@@ -923,3 +943,71 @@ maybe_heartbeat(Timeout, TimeoutFun, Acc) ->
             {ok, Acc}
         end
     end.
+
+%View Options parsing
+parse_view_options([], Acc) ->
+    Acc;
+parse_view_options([{K, V} | Rest], Acc) ->
+    Acc1 = case couch_util:to_binary(K) of
+        <<"reduce">> ->
+            [{reduce, couch_mrview_http:parse_boolean(V)}];
+        <<"key">> ->
+            V1 = parse_json(V),
+            [{start_key, V1}, {end_key, V1} | Acc];
+        <<"keys">> ->
+            [{keys, parse_json(V)} | Acc];
+        <<"startkey">> ->
+            [{start_key, parse_json(V)} | Acc];
+        <<"start_key">> ->
+            [{start_key, parse_json(V)} | Acc];
+        <<"startkey_docid">> ->
+            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+        <<"start_key_docid">> ->
+            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+        <<"endkey">> ->
+            [{end_key, parse_json(V)} | Acc];
+        <<"end_key">> ->
+            [{end_key, parse_json(V)} | Acc];
+        <<"endkey_docid">> ->
+            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+        <<"end_key_docid">> ->
+            [{start_key_docid, couch_util:to_binary(V)} | Acc];
+        <<"limit">> ->
+            [{limit, couch_mrview_http:parse_pos_int(V)} | Acc];
+        <<"count">> ->
+            throw({query_parse_error, <<"QS param `count` is not `limit`">>});
+        <<"stale">> when V =:= <<"ok">> orelse V =:= "ok" ->
+            [{stale, ok} | Acc];
+        <<"stale">> when V =:= <<"update_after">> orelse V =:= "update_after" ->
+            [{stale, update_after} | Acc];
+        <<"stale">> ->
+            throw({query_parse_error, <<"Invalid value for `stale`.">>});
+        <<"descending">> ->
+            case couch_mrview_http:parse_boolean(V) of
+                true ->
+                    [{direction, rev} | Acc];
+                _ ->
+                    [{direction, fwd} | Acc]
+            end;
+        <<"skip">> ->
+            [{skip, couch_mrview_http:parse_pos_int(V)} | Acc];
+        <<"group">> ->
+            case couch_mrview_http:parse_booolean(V) of
+                true ->
+                    [{group_level, exact} | Acc];
+                _ ->
+                    [{group_level, 0} | Acc]
+            end;
+        <<"group_level">> ->
+            [{group_level, couch_mrview_http:parse_pos_int(V)} | Acc];
+        <<"inclusive_end">> ->
+            [{inclusive_end, couch_mrview_http:parse_boolean(V)}];
+        _ ->
+            Acc
+    end,
+    parse_view_options(Rest, Acc1).
+
+parse_json(V) when is_list(V) ->
+    ?JSON_DECODE(V);
+parse_json(V) ->
+    V.

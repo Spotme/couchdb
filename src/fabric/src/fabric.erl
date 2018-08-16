@@ -30,7 +30,7 @@
 
 % Views
 -export([all_docs/4, all_docs/5, changes/4, query_view/3, query_view/4,
-    query_view/6, query_view/7, get_view_group_info/2, end_changes/0]).
+    query_view/6, query_view/7, get_view_group_info/2, end_changes/0, get_view_info/3]).
 
 % miscellany
 -export([design_docs/1, reset_validation_funs/1, cleanup_index_files/0,
@@ -40,6 +40,7 @@
 
 -type dbname() :: (iodata() | tuple()).
 -type docid() :: iodata().
+-type vname() :: iodata().
 -type revision() :: {integer(), binary()}.
 -type callback() :: fun((any(), any()) -> {ok | stop, any()}).
 -type json_obj() :: {[{binary() | atom(), any()}]}.
@@ -408,6 +409,17 @@ query_view(DbName, Options, DDoc, ViewName, Callback, Acc0, QueryArgs0) ->
     ]}.
 get_view_group_info(DbName, DesignId) ->
     fabric_group_info:go(dbname(DbName), design_doc(DesignId)).
+
+-spec get_view_info(dbname(), #doc{} | docid(), vname()) ->
+        {ok, [
+            {indexed_seq, pos_integer()} |
+            {update_seq, pos_integer()} |
+            {purge_seq, non_neg_integer()} |
+            {total_rows, pos_integer()} |
+            {total_seqs, non_neg_integer()}
+        ]}.
+get_view_info(DbName, DesignId, VName) ->
+    fabric_view_info:go(dbname(DbName), design_doc(DesignId), VName).
 
 -spec end_changes() -> ok.
 end_changes() ->
