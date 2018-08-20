@@ -28,7 +28,9 @@
     user_ctx = #user_ctx{},
     security = [],
     validate_doc_funs = undefined,
-
+    validate_doc_read_funs = undefined,
+    should_load_validate_doc_read_funs = true,
+    
     before_doc_update = nil, % nil | fun(Doc, Db) -> NewDoc
     after_doc_read = nil,    % nil | fun(Doc, Db) -> NewDoc
 

@@ -673,7 +673,7 @@ validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDoc
         Error -> Error
     end;
 validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
-    ValidationFuns = load_validation_funs(Db),
+    {ValidationFuns, _} = load_validation_funs(Db),
     validate_doc_update(Db#db{validate_doc_funs=ValidationFuns}, Doc, Fun);
 validate_doc_update(#db{validate_doc_funs=[]}, _Doc, _GetDiskDocFun) ->
     ok;
@@ -715,8 +715,17 @@ validate_doc_update_int(Db, Doc, GetDiskDocFun) ->
                 Error
         end
     end,
-    couch_stats:update_histogram([couchdb, query_server, vdu_process_time],
-                                 Fun).
+    case catch(check_is_admin(Db)) of
+        ok ->
+            case is_system_db(Db) of
+                true ->
+                    couch_stats:update_histogram([couchdb, query_server, vdu_process_time],Fun);
+                false ->
+                    ok
+            end;
+        _ ->
+            couch_stats:update_histogram([couchdb, query_server, vdu_process_time],Fun)
+    end.
 
 
 % to be safe, spawn a middleman here
@@ -725,9 +734,9 @@ load_validation_funs(#db{main_pid=Pid, name = <<"shards/", _/binary>>}=Db) ->
         exit(ddoc_cache:open(mem3:dbname(Db#db.name), validation_funs))
     end),
     receive
-        {'DOWN', Ref, _, _, {ok, Funs}} ->
-            gen_server:cast(Pid, {load_validation_funs, Funs}),
-            Funs;
+        {'DOWN', Ref, _, _, {ok, {UpdFuns, RFuns}}} ->
+            gen_server:cast(Pid, {load_validation_funs, {UpdFuns, RFuns}}),
+            {UpdFuns, RFuns};
         {'DOWN', Ref, _, _, Reason} ->
             couch_log:error("could not load validation funs ~p", [Reason]),
             throw(internal_server_error)
@@ -740,14 +749,23 @@ load_validation_funs(#db{main_pid=Pid}=Db) ->
             Doc
     end,
     DDocs = lists:map(OpenDocs, DDocInfos),
-    Funs = lists:flatmap(fun(DDoc) ->
-        case couch_doc:get_validate_doc_fun(DDoc) of
-            nil -> [];
-            Fun -> [Fun]
-        end
-    end, DDocs),
-    gen_server:cast(Pid, {load_validation_funs, Funs}),
-    Funs.
+    {UpdateFuns, ReadFuns} = lists:foldl(fun(DDoc, {UpdFunsAcc, RFunsAcc}) ->
+        UFuns = case couch_doc:get_validate_doc_fun(DDoc) of
+            nil ->
+                UpdFunsAcc;
+            UFun ->
+                [UFun|UpdFunsAcc]
+        end,
+        RFuns = case couch_doc:get_validate_read_doc_fun(DDoc) of
+            nil ->
+                RFunsAcc;
+            RFun ->
+                [RFun|RFunsAcc]
+        end,
+    {UFuns, RFuns} end, {[], []}, DDocs),
+    gen_server:cast(Pid, {load_validation_funs, {UpdateFuns, ReadFuns}}),
+    {UpdateFuns, ReadFuns}.
+
 
 reload_validation_funs(#db{} = Db) ->
     gen_server:cast(Db#db.main_pid, {load_validation_funs, undefined}).
@@ -1533,14 +1551,79 @@ make_doc(#db{} = Db, Id, Deleted, Bp, {Pos, Revs}) ->
         ListAtts when is_list(ListAtts) ->
             Doc0
     end,
-    after_doc_read(Db, Doc1#doc{
+    DocAfter = after_doc_read(Db, Doc1#doc{
         atts = [couch_att:from_disk_term(Db, T) || T <- Doc1#doc.atts]
-    }).
+    }),
+    prep_and_validate_read(Db, Id, Deleted, {Pos, Revs}, DocAfter).
 
 
 after_doc_read(#db{} = Db, Doc) ->
     DocWithBody = couch_doc:with_ejson_body(Doc),
     couch_db_plugin:after_doc_read(Db, DocWithBody).
+
+
+prep_and_validate_read(Db, Id, Deleted, {Pos, Revs}, DocAfter) ->
+    UserCtx = Db#db.user_ctx,
+    case lists:member(<<"_admin">>, Db#db.user_ctx#user_ctx.roles) of
+      true ->
+        DocAfter;
+      false when UserCtx#user_ctx.roles =:= [], UserCtx#user_ctx.name =:= null,
+                 UserCtx#user_ctx.handler =:= undefined ->
+        DocAfter;
+      false ->
+        if Db#db.should_load_validate_doc_read_funs ->
+              Db2 = Db#db{should_load_validate_doc_read_funs=false},
+              {_, RFuns} = load_validation_funs(Db2),
+              case validate_doc_read(Db#db{validate_doc_read_funs=RFuns}, DocAfter) of
+                  {Error, Reason} ->
+                    RevsLimit = get_revs_limit(Db),
+                    DocPlaceholder = #doc{
+                        id = Id,
+                        revs = {Pos, lists:sublist(Revs, 1, RevsLimit)},
+                        body = {[{validate_doc_read_error, forbidden}, {Error, Reason}]},
+                        deleted = Deleted
+                    },
+                    after_doc_read(Db, DocPlaceholder);
+                  ok ->
+                    DocAfter
+              end;
+           true ->
+              DocAfter
+        end
+    end.
+
+validate_doc_read(#db{validate_doc_read_funs=[]}, _Doc) ->
+    ok;
+validate_doc_read(#db{validate_doc_read_funs = undefined}, _Doc) ->
+    ok;
+validate_doc_read(_Db, #doc{id= <<"_local/",_/binary>>}) ->
+    ok;
+validate_doc_read(Db, Doc) ->
+    case catch(check_is_admin(Db)) of
+        ok ->
+            ok;
+        _ ->
+            JsonCtx = couch_util:json_user_ctx(Db),
+            SecObj = get_security(Db),
+            try [case Fun(Doc, JsonCtx, SecObj) of
+                    ok -> ok;
+                    Error -> throw(Error)
+                end || Fun <- Db#db.validate_doc_read_funs],
+                ok
+            catch
+                throw:{forbidden, _}=Error ->
+                  Error;
+                throw:{unauthorized, _}=Error ->
+                  Error;
+                throw:{unknown_error, _}=Error ->
+                  Error;
+                throw:Error ->
+                  couch_log:warning("validate_doc_read failed with unknown error: ~p",
+                                    [Error]),
+                  ok
+            end
+    end.
+
 
 increment_stat(#db{options = Options}, Stat) ->
     case lists:member(sys_db, Options) of

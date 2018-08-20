@@ -50,6 +50,7 @@ var DDoc = (function() {
     "views"     : Filter.filter_view, 
     "updates"  : Render.update,
     "validate_doc_update" : Validate.validate,
+    "validate_doc_read" : Validate.validate,
     "rewrites"  : Render.rewrite
   };
   var ddocs = {};
