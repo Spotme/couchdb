@@ -168,7 +168,7 @@ get_stuck_repls_pids(Repls) ->
   case Repls of
       StuckRepls when is_list(StuckRepls) ->
           lists:map(fun(#unhealthy_repl{pid=Pid}) -> Pid end,
-              [Repl || Repl <- Repls, Repl#unhealthy_repl.generation >= max_rounds() - 1]);
+              [Repl || Repl <- Repls, Repl#unhealthy_repl.generation =:= max_rounds() - 1]);
       _Else -> []
   end.
 
