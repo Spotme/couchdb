@@ -1,7 +1,7 @@
 - module(couch_replicator_watchdog).
 - author('Oleksandr Karaberov').
 - description('Inspects and restarts stuck replication jobs').
-- vsn(5).
+- vsn(6).
 - export([
     start_link/0
 ]).
@@ -90,24 +90,20 @@ run_health_check(#watchdog_state{round=CurrentRound,sweep_cycle=SweepCycle}=Stat
   end,
   couch_log:warning("couch_replicator_watchdog: heartbeat " ++ Info,
                     [CurrentRound, MaxRounds, SweepCycle, round_interval()]),
-  case CurrentRound of
-      Value when Value < MaxRounds ->
-          update_stuck_repls_queue(State);
-      Value when Value =:= MaxRounds ->
-          reload_stuck_repls(get_stuck_repls_pids(State#watchdog_state.stuck_repls)),
-          State#watchdog_state{round=0, sweep_cycle=SweepCycle + 1, stuck_repls=[]};
-      _Else ->
-          State
-  end.
+  UpdState = update_stuck_repls(State),
+  if CurrentRound =:= MaxRounds ->
+      reload_stuck_repls(get_stuck_repls_pids(UpdState#watchdog_state.stuck_repls)),
+      State#watchdog_state{round=0, sweep_cycle=SweepCycle + 1, stuck_repls=[]};
+  true -> UpdState#watchdog_state{round = CurrentRound + 1} end.
 
 
--spec update_stuck_repls_queue(watchdog_state()) -> watchdog_state().
-update_stuck_repls_queue(#watchdog_state{round=Round, stuck_repls=StRepls}=State) ->
+-spec update_stuck_repls(watchdog_state()) -> watchdog_state().
+update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
   Tasks = couch_task_status:all(),
   PendingRepls = detect_pending_repls(Tasks),
   case StRepls of
       [] ->
-          State#watchdog_state{stuck_repls=PendingRepls, round=Round + 1};
+          State#watchdog_state{stuck_repls=PendingRepls};
       StuckRepls when is_list(StuckRepls) ->
           StuckRepls1 = lists:map(fun(#unhealthy_repl{generation=Generation}=Rpl) ->
               Rpl#unhealthy_repl{generation=Generation + 1} end,
@@ -124,9 +120,7 @@ update_stuck_repls_queue(#watchdog_state{round=Round, stuck_repls=StRepls}=State
               not lists:keymember(URepl#unhealthy_repl.pid, #unhealthy_repl.pid, StuckRepls1)]),
           couch_log:warning("couch_replicator_watchdog: ~p replication(s) considered unhealthy ~p",
                             [length(UnhealthyRepls), pretty_print_records(UnhealthyRepls)]),
-          State#watchdog_state{stuck_repls=UnhealthyRepls, round=Round + 1};
-      _Else ->
-          State#watchdog_state{round=Round + 1}
+          State#watchdog_state{stuck_repls=UnhealthyRepls}
   end.
 
 
@@ -168,7 +162,7 @@ get_stuck_repls_pids(Repls) ->
   case Repls of
       StuckRepls when is_list(StuckRepls) ->
           lists:map(fun(#unhealthy_repl{pid=Pid}) -> Pid end,
-              [Repl || Repl <- Repls, Repl#unhealthy_repl.generation =:= max_rounds() - 1]);
+              [Repl || Repl <- Repls, Repl#unhealthy_repl.generation =:= max_rounds()]);
       _Else -> []
   end.
 
