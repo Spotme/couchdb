@@ -1,7 +1,7 @@
 - module(couch_replicator_watchdog).
 - author('Oleksandr Karaberov').
 - description('Inspects and restarts stuck replication jobs').
-- vsn(6).
+- vsn(7).
 - export([
     start_link/0
 ]).
@@ -84,11 +84,8 @@ terminate(_Reason, _State) ->
 -spec run_health_check(watchdog_state()) -> watchdog_state().
 run_health_check(#watchdog_state{round=CurrentRound,sweep_cycle=SweepCycle}=State) ->
   MaxRounds = max_rounds(),
-  Info = case ignore_infra() of
-      true -> "[round: ~p] [max_rounds: ~p] [sweep_cycle: ~p] [round_interval: ~p] [ignore euinfra]";
-      false -> "[round: ~p] [max_rounds: ~p] [sweep_cycle: ~p] [round_interval: ~p]"
-  end,
-  couch_log:warning("couch_replicator_watchdog: heartbeat " ++ Info,
+  InfoMsg = "[round: ~p] [max_rounds: ~p] [sweep_cycle: ~p] [round_interval: ~p]",
+  couch_log:warning("couch_replicator_watchdog: heartbeat " ++ InfoMsg,
                     [CurrentRound, MaxRounds, SweepCycle, round_interval()]),
   UpdState = update_stuck_repls(State),
   if CurrentRound =:= MaxRounds ->
@@ -132,29 +129,47 @@ detect_pending_repls(Tasks) ->
                       doc_id = couch_util:get_value(doc_id, ReplTask, <<>>),
                       source = couch_util:get_value(source, ReplTask, <<>>)}
       end, lists:filter(fun(Task) ->
-              SkipInfraRepls = maybe_ignore_infra_repls(Task),
-              case lists:keyfind(changes_pending, 1, Task) of
-                  {changes_pending, Pending} when is_number(Pending),
-                                             Pending > 0,
-                                             not SkipInfraRepls -> true;
-                  _Else -> false
+              IsRcouch = is_source_rcouch(Task),
+              if IsRcouch ->
+                  is_rcouch_repl_pending(Task);
+              true ->
+                  case lists:keyfind(changes_pending, 1, Task) of
+                      {changes_pending, Pending} when is_number(Pending), Pending > 0 ->
+                          true;
+                      _Else ->
+                          false
+                  end
               end
   end, Tasks)).
 
 
--spec maybe_ignore_infra_repls([any()]) -> boolean().
-maybe_ignore_infra_repls(Task) ->
-  IgnoreInfra = ignore_infra(),
-  if IgnoreInfra  ->
-    case lists:keyfind(doc_id, 1, Task) of
-        {doc_id, DocId} ->
-            case string:str(binary_to_list(DocId), "euinfra") of
-                Ind when Ind =/= 0 -> true;
-                _Ind -> false
-            end;
-        _Else -> false
-    end;
+-spec is_rcouch_repl_pending(any()) -> boolean().
+is_rcouch_repl_pending(Task) ->
+  CurSeq = couch_util:get_value(checkpointed_source_seq, Task, 0),
+  SourceSeq = couch_util:get_value(source_seq, Task, 0),
+  ThroughSeq = couch_util:get_value(through_seq, Task, 0),
+  PendingChanges = couch_util:get_value(changes_pending, Task, 0),
+  % Task stats reporting seems to be broken for CouchDB2 <--> Couch1.3 (rcouch)
+  % replications https://github.com/apache/couchdb/issues/976#issuecomment-344310226
+  % therefore another more versbose method is required to check for pending changes
+  if ThroughSeq =/= 0, SourceSeq =/= 0, PendingChanges =/= 0, PendingChanges =/= CurSeq,
+  PendingChanges =/= SourceSeq, PendingChanges =/= ThroughSeq -> true;
   true -> false end.
+
+
+-spec is_source_rcouch(any()) -> boolean().
+is_source_rcouch(Task) ->
+  case couch_util:get_value(checkpointed_source_seq, Task, 0) of
+      CurSorceSeq when is_number(CurSorceSeq), CurSorceSeq =/= 0 ->
+          true;
+      CurSorceSeq when is_binary(CurSorceSeq) ->
+          case string:str(binary_to_list(CurSorceSeq), "-") of
+              Ind when Ind =/= 0 -> false;
+              _Ind -> true
+          end;
+      _Else ->
+          false
+  end.
 
 
 -spec get_stuck_repls_pids([urepl()]) -> [pid()] | [].
@@ -204,11 +219,6 @@ restart_jitter() -> 500.
 
 -spec kill_threshold() -> non_neg_integer().
 kill_threshold() -> 999999.
-
-
--spec ignore_infra() -> boolean().
-ignore_infra() ->
-  config:get_boolean("replicator_watchdog", "ignore_infra_repls", false).
 
 
 -spec round_interval() -> non_neg_integer().
