@@ -17,7 +17,7 @@
 
 
 -record(unhealthy_repl, {
-    pid = null :: pid() | atom(),
+    pid = null :: pid() | null,
     pending_changes = 0 :: non_neg_integer(),
     doc_id = <<>> :: binary(),
     source = <<>> :: binary(),
