@@ -1,7 +1,7 @@
 - module(couch_replicator_watchdog).
 - author('Oleksandr Karaberov').
 - description('Inspects and restarts stuck replication jobs').
-- vsn(7).
+- vsn(8).
 - export([
     start_link/0
 ]).
@@ -17,7 +17,7 @@
 
 
 -record(unhealthy_repl, {
-    pid = null :: pid() | null,
+    job_id = <<>> :: binary(),
     pending_changes = 0 :: non_neg_integer(),
     doc_id = <<>> :: binary(),
     source = <<>> :: binary(),
@@ -29,7 +29,9 @@
 -record(watchdog_state, {
     sweep_cycle = 0 :: non_neg_integer(),
     stuck_repls = [] :: [urepl()],
-    round = 0 :: non_neg_integer()
+    round = 0 :: non_neg_integer(),
+    timer = null :: reference() | null,
+    interval = 0 :: non_neg_integer()
 }).
 
 -type watchdog_state() :: #watchdog_state{}.
@@ -43,8 +45,9 @@ start_link() ->
 
 
 init([])->
-    timer:send_interval(round_interval(), health_check),
-    {ok, #watchdog_state{}}.
+    Interval = round_interval(),
+    TimerRef = erlang:send_after(Interval, self(), health_check),
+    {ok, #watchdog_state{timer = TimerRef, interval = Interval}}.
 
 
 handle_cast({cluster, unstable}, State) ->
@@ -68,13 +71,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_info(health_check, #watchdog_state{}=State)->
+    erlang:cancel_timer(State#watchdog_state.timer),
+    Interval = round_interval(),
+    TimerRef = erlang:send_after(Interval, self(), health_check),
     Enabled = max_rounds() < kill_threshold(),
-    DocState = if Enabled ->
-        run_health_check(State);
+    State1 = if Enabled ->
+        run_health_check(State#watchdog_state{interval = Interval, timer = TimerRef});
     true ->
-        #watchdog_state{}
+        #watchdog_state{interval = Interval, timer = TimerRef}
     end,
-    {noreply, DocState}.
+    {noreply, State1}.
 
 
 terminate(_Reason, _State) ->
@@ -89,15 +95,17 @@ run_health_check(#watchdog_state{round=CurrentRound,sweep_cycle=SweepCycle}=Stat
                     [CurrentRound, MaxRounds, SweepCycle, round_interval()]),
   UpdState = update_stuck_repls(State),
   if CurrentRound =:= MaxRounds ->
-      reload_stuck_repls(get_stuck_repls_pids(UpdState#watchdog_state.stuck_repls)),
+      reload_stuck_repls(get_stuck_repls_ids(UpdState#watchdog_state.stuck_repls)),
       State#watchdog_state{round=0, sweep_cycle=SweepCycle + 1, stuck_repls=[]};
   true -> UpdState#watchdog_state{round = CurrentRound + 1} end.
 
 
 -spec update_stuck_repls(watchdog_state()) -> watchdog_state().
 update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
-  Tasks = couch_task_status:all(),
-  PendingRepls = detect_pending_repls(Tasks),
+  ReplTasks = [TaskProps || {_, TaskProps} <- ets:tab2list(couch_task_status),
+      couch_util:get_value(type, TaskProps) =:= replication
+  ],
+  PendingRepls = detect_pending_repls(ReplTasks),
   case StRepls of
       [] ->
           State#watchdog_state{stuck_repls=PendingRepls};
@@ -105,7 +113,7 @@ update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
           StuckRepls1 = lists:map(fun(#unhealthy_repl{generation=Generation}=Rpl) ->
               Rpl#unhealthy_repl{generation=Generation + 1} end,
           [R || R <- StuckRepls,
-                  case lists:keyfind(R#unhealthy_repl.pid, #unhealthy_repl.pid, PendingRepls) of
+                  case lists:keyfind(R#unhealthy_repl.job_id, #unhealthy_repl.job_id, PendingRepls) of
                       #unhealthy_repl{pending_changes=PChanges} ->
                           if PChanges < R#unhealthy_repl.pending_changes -> false;
                           true -> true end;
@@ -114,7 +122,7 @@ update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
           ]),
           UnhealthyRepls = lists:append(StuckRepls1,
               [URepl || URepl <- PendingRepls,
-              not lists:keymember(URepl#unhealthy_repl.pid, #unhealthy_repl.pid, StuckRepls1)]),
+              not lists:keymember(URepl#unhealthy_repl.job_id, #unhealthy_repl.job_id, StuckRepls1)]),
           couch_log:warning("couch_replicator_watchdog: ~p replication(s) considered unhealthy ~p",
                             [length(UnhealthyRepls), pretty_print_records(UnhealthyRepls)]),
           State#watchdog_state{stuck_repls=UnhealthyRepls}
@@ -124,7 +132,7 @@ update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
 -spec detect_pending_repls([any()] | []) -> [urepl()].
 detect_pending_repls(Tasks) ->
   lists:map(fun(ReplTask) ->
-      #unhealthy_repl{pid = pidify(couch_util:get_value(pid, ReplTask)),
+      #unhealthy_repl{job_id = couch_util:get_value(replication_id, ReplTask, <<>>),
                       pending_changes = couch_util:get_value(changes_pending, ReplTask, 0),
                       doc_id = couch_util:get_value(doc_id, ReplTask, <<>>),
                       source = couch_util:get_value(source, ReplTask, <<>>)}
@@ -172,38 +180,24 @@ is_source_rcouch(Task) ->
   end.
 
 
--spec get_stuck_repls_pids([urepl()]) -> [pid()] | [].
-get_stuck_repls_pids(Repls) ->
+-spec get_stuck_repls_ids([urepl()]) -> [binary()] | [].
+get_stuck_repls_ids(Repls) ->
   case Repls of
       StuckRepls when is_list(StuckRepls) ->
-          lists:map(fun(#unhealthy_repl{pid=Pid}) -> Pid end,
+          lists:map(fun(#unhealthy_repl{job_id=JobId}) -> JobId end,
               [Repl || Repl <- Repls, Repl#unhealthy_repl.generation =:= max_rounds()]);
       _Else -> []
   end.
 
 
--spec reload_stuck_repls([pid()] | []) -> ok.
+-spec reload_stuck_repls([binary()] | []) -> ok.
 reload_stuck_repls([]) ->
   ok;
-reload_stuck_repls(Pids) ->
+reload_stuck_repls(JobIds) ->
   couch_log:warning("couch_replicator_watchdog: ~p replication(s) got stuck and will be restarted: ~p",
-                    [length(Pids), Pids]),
-  lists:foreach(fun(P) -> couch_util:shutdown_sync(P) end, Pids),
+                    [length(JobIds), JobIds]),
+  lists:foreach(fun(JobId) -> couch_replicator:restart_job(JobId) end, JobIds),
   ok.
-
-
--spec pidify(any()) -> pid().
-pidify(Pid) ->
-  case Pid of
-      P when is_list(P) ->
-          list_to_pid(P);
-      P when is_binary(P) ->
-          list_to_pid(binary_to_list(P));
-      P when is_pid(P) ->
-          P;
-      _Else ->
-          null
-  end.
 
 
 -spec pretty_print_records([urepl()]) -> [any()].
@@ -222,4 +216,4 @@ round_interval() ->
 
 -spec max_rounds() -> non_neg_integer().
 max_rounds() ->
-    config:get_integer("replicator_watchdog", "max_rounds", 5).
+    config:get_integer("replicator_watchdog", "max_rounds", 3).
