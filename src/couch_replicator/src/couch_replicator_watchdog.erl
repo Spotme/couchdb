@@ -188,9 +188,7 @@ reload_stuck_repls([]) ->
 reload_stuck_repls(Pids) ->
   couch_log:warning("couch_replicator_watchdog: ~p replication(s) got stuck and will be restarted: ~p",
                     [length(Pids), Pids]),
-  lists:foreach(fun(P) ->
-      P ! couch_replicator_watchdog_wake,
-      timer:sleep(restart_jitter()) end, Pids),
+  lists:foreach(fun(P) -> couch_util:shutdown_sync(P) end, Pids),
   ok.
 
 
@@ -211,10 +209,6 @@ pidify(Pid) ->
 -spec pretty_print_records([urepl()]) -> [any()].
 pretty_print_records(Records) ->
     lists:map(fun(R) -> ?RECORD_INFO(unhealthy_repl, R) end, Records).
-
-
--spec restart_jitter() -> non_neg_integer().
-restart_jitter() -> 500.
 
 
 -spec kill_threshold() -> non_neg_integer().
