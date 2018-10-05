@@ -20,7 +20,9 @@
     job_id = <<>> :: binary(),
     pending_changes = 0 :: non_neg_integer(),
     doc_id = <<>> :: binary(),
-    source = <<>> :: binary(),
+    docs_written = 0 :: non_neg_integer(),
+    doc_write_failures = 0 :: non_neg_integer(),
+    docs_read = 0 :: non_neg_integer(),
     generation = 0 :: non_neg_integer()
 }).
 
@@ -114,9 +116,15 @@ update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
               Rpl#unhealthy_repl{generation=Generation + 1} end,
           [R || R <- StuckRepls,
                   case lists:keyfind(R#unhealthy_repl.job_id, #unhealthy_repl.job_id, PendingRepls) of
-                      #unhealthy_repl{pending_changes=PChanges} ->
-                          if PChanges < R#unhealthy_repl.pending_changes -> false;
-                          true -> true end;
+                      #unhealthy_repl{pending_changes=PChanges,
+                                      docs_written= DocsWritten,
+                                      docs_read=DocsRead,
+                                      doc_write_failures=DocsFailures} ->
+                          if PChanges >= R#unhealthy_repl.pending_changes,
+                             DocsWritten =:= R#unhealthy_repl.docs_written,
+                             DocsRead =:= R#unhealthy_repl.docs_read,
+                             DocsFailures =:= R#unhealthy_repl.doc_write_failures -> true;
+                          true -> false end;
                       false -> false
                   end
           ]),
@@ -135,7 +143,9 @@ detect_pending_repls(Tasks) ->
       #unhealthy_repl{job_id = couch_util:get_value(replication_id, ReplTask, <<>>),
                       pending_changes = couch_util:get_value(changes_pending, ReplTask, 0),
                       doc_id = couch_util:get_value(doc_id, ReplTask, <<>>),
-                      source = couch_util:get_value(source, ReplTask, <<>>)}
+                      doc_write_failures = couch_util:get_value(doc_write_failures, ReplTask, 0),
+                      docs_read = couch_util:get_value(docs_read, ReplTask, 0),
+                      docs_written = couch_util:get_value(docs_written, ReplTask, 0)}
       end, lists:filter(fun(Task) ->
               IsRcouch = is_source_rcouch(Task),
               if IsRcouch ->
