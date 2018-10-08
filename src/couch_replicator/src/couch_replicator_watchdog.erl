@@ -13,6 +13,11 @@
    code_change/3,
    handle_cast/2
 ]).
+- export([
+   check_msg_queue/1,
+   get_pids/1,
+   get_pids/2
+]).
 - behavior(gen_server).
 
 
@@ -227,3 +232,44 @@ round_interval() ->
 -spec max_rounds() -> non_neg_integer().
 max_rounds() ->
     config:get_integer("replicator_watchdog", "max_rounds", 3).
+
+
+%% Various debugging utilities to be used from the remsh
+check_msg_queue(Pid) ->
+    {links, LinkedProcesses} = erlang:process_info(list_to_pid(Pid), links),
+    [P || P <- lists:map(fun(LPid) ->
+        case erlang:process_info(LPid, message_queue_len) of
+            {message_queue_len, Len} when Len > 0 ->
+                {erlang:process_info(LPid), LPid};
+            _Else -> ok
+        end end, LinkedProcesses), P =/= ok].
+
+
+get_pids(Call) ->
+  get_pids_int(erlang:processes(), Call).
+
+
+get_pids(Call, ParentPid) ->
+  {links, LinkedProcesses} = erlang:process_info(list_to_pid(ParentPid), links),
+  get_pids_int(LinkedProcesses, Call).
+
+
+get_pids_int(Processes, Call) ->
+  lists:filter(fun(Pid) ->
+      {Mod, _Fn, _Ar} = case erlang:process_info(Pid, initial_call) of
+                        {initial_call,{proc_lib,init_p,A}} ->
+                            case erlang:process_info(Pid, dictionary) of
+                                {dictionary, D} -> proplists:get_value('$initial_call', D, undefined);
+                                _ -> {proc_lib,init_p,A}
+                            end;
+                        {initial_call,{erlang,apply,A}} ->
+                            case erlang:process_info(Pid, current_function) of
+                                {current_function,MFA} -> MFA;
+                                _ -> {erlang,apply,A}
+                            end;
+                        {initial_call,IC} ->
+                            IC;
+                        Other ->
+                            Other
+                  end,
+      if Mod =:= Call -> true; true -> false end end, Processes).
