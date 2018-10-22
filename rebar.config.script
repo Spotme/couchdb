@@ -59,6 +59,8 @@ DepDescs = [
                    {tag, "2.2.0"}, [raw]},
 {fauxton,          {url, "https://github.com/apache/couchdb-fauxton"},
                    {tag, "v1.1.18"}, [raw]},
+{recon,            {url, "https://github.com/ferd/recon"},
+                   {tag, "2.3.6"}},
 %% Third party deps
 {folsom,           "folsom",           {tag, "CouchDB-0.8.2"}},
 {hyper,            "hyper",            {tag, "CouchDB-2.2.0-4"}},
