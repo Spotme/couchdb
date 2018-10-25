@@ -43,9 +43,6 @@
 
 -type watchdog_state() :: #watchdog_state{}.
 
--define(RECORD_INFO(T,R),
-    lists:zip(record_info(fields, T), tl(tuple_to_list(R)))).
-
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [],  []).
@@ -136,8 +133,6 @@ update_stuck_repls(#watchdog_state{stuck_repls=StRepls}=State) ->
           UnhealthyRepls = lists:append(StuckRepls1,
               [URepl || URepl <- PendingRepls,
               not lists:keymember(URepl#unhealthy_repl.job_id, #unhealthy_repl.job_id, StuckRepls1)]),
-          couch_log:warning("couch_replicator_watchdog: ~p replication(s) considered unhealthy ~p",
-                            [length(UnhealthyRepls), pretty_print_records(UnhealthyRepls)]),
           State#watchdog_state{stuck_repls=UnhealthyRepls}
   end.
 
@@ -213,11 +208,6 @@ reload_stuck_repls(JobIds) ->
                     [length(JobIds), JobIds]),
   lists:foreach(fun(JobId) -> couch_replicator:restart_job(JobId) end, JobIds),
   ok.
-
-
--spec pretty_print_records([urepl()]) -> [any()].
-pretty_print_records(Records) ->
-    lists:map(fun(R) -> ?RECORD_INFO(unhealthy_repl, R) end, Records).
 
 
 -spec kill_threshold() -> non_neg_integer().
