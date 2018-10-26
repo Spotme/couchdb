@@ -37,6 +37,7 @@ start_update(Partial, State, NumChanges) ->
 
     Self = self(),
     MapFun = fun() ->
+        erlang:put(io_priority, {view_update, State#mrst.db_name, State#mrst.idx_name}),
         couch_task_status:add_task([
             {indexer_pid, ?l2b(pid_to_list(Partial))},
             {type, indexer},
@@ -49,8 +50,10 @@ start_update(Partial, State, NumChanges) ->
         couch_task_status:set_update_frequency(500),
         map_docs(Self, InitState)
     end,
-    WriteFun = fun() -> write_results(Self, InitState) end,
-
+    WriteFun = fun() ->
+        erlang:put(io_priority, {view_update, State#mrst.db_name, State#mrst.idx_name}),
+        write_results(Self, InitState)
+    end,
     spawn_link(MapFun),
     spawn_link(WriteFun),
 
@@ -210,7 +213,6 @@ write_results(Parent, #mrst{db_name = DbName, idx_name = IdxName} = State) ->
         stop ->
             Parent ! {new_state, State};
         {Go, {Seq, ViewKVs, DocIdKeys, Seqs, Log}} ->
-            erlang:put(io_priority, {view_update, DbName, IdxName}),
             NewState = write_kvs(State, Seq, ViewKVs, DocIdKeys, Seqs, Log),
             if Go == stop ->
                 Parent ! {new_state, NewState};
