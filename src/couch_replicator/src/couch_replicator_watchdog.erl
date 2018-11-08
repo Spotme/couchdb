@@ -1,7 +1,7 @@
 - module(couch_replicator_watchdog).
 - author('Oleksandr Karaberov').
 - description('Inspects and restarts stuck replication jobs').
-- vsn(8).
+- vsn(9).
 - export([
     start_link/0
 ]).
@@ -16,7 +16,10 @@
 - export([
    check_msg_queue/1,
    get_pids/1,
-   get_pids/2
+   get_pids/2,
+   matching_pids/1,
+   procs_by_call/0,
+   scan_ports/2
 ]).
 - behavior(gen_server).
 
@@ -224,7 +227,10 @@ max_rounds() ->
     config:get_integer("replicator_watchdog", "max_rounds", 3).
 
 
+%%
 %% Various debugging utilities to be used from the remsh
+%%
+
 check_msg_queue(Pid) ->
     {links, LinkedProcesses} = erlang:process_info(list_to_pid(Pid), links),
     [P || P <- lists:map(fun(LPid) ->
@@ -263,3 +269,76 @@ get_pids_int(Processes, Call) ->
                             Other
                   end,
       if Mod =:= Call -> true; true -> false end end, Processes).
+
+% Returns a number of all TCP ports open on the node with the socket options
+% matching the provided ones.
+% Example:
+% (couchdb@127.0.0.1)4> scan_ports(priority, 6).
+% {{total,8363},{matching,458}}
+scan_ports(Opt, Value) ->
+    AllPorts = recon:tcp(),
+    Total = length(AllPorts),
+    Matching = lists:filter(fun(Port) ->
+          [_, _, _, _, {_, Specifics}] = recon:port_info(Port),
+          Opts = couch_util:get_value(options, Specifics),
+          if is_list(Opts), Opts =/= [] ->
+              Option = couch_util:get_value(Opt, Opts),
+              if Option =:= Value -> true; true -> false end;
+          true -> false
+        end end, AllPorts),
+    {{total, Total}, {matching, length(Matching)}}.
+
+%% Function to group all Erlrang VM processes by their module. Usefult to know
+%% how many processes of what type do we have.
+%% erlang_apply in the output usually corresponds to spawn calls (ad hoc process)
+%% creation therefore we deduce a call site.
+procs_by_call() ->
+    Reducee = fun(InCall, Dict) ->
+       Contained = dict:is_key(InCall, Dict),
+       if Contained -> dict:store(InCall, dict:fetch(InCall, Dict) + 1, Dict);
+       true -> dict:store(InCall, 1, Dict) end
+    end,
+    AllInitCalls = lists:map(fun(Process) ->
+        ProcessInfo = erlang:process_info(Process),
+        if ProcessInfo =/= undefined, ProcessInfo =/= [] ->
+            ProcessDict = proplists:get_value('dictionary', ProcessInfo, []),
+            if ProcessDict =/= [] ->
+                {InitialCall, _, _} = case proplists:get_value('$initial_call', ProcessDict, []) of
+                    [] -> proplists:get_value(initial_call, ProcessInfo);
+                    Call -> Call
+                end,
+                InitialCall;
+            true ->
+                case lists:keyfind(initial_call, 1, ProcessInfo) of
+                    {initial_call, {erlang, apply, _}} -> erlang_apply;
+                    {initial_call, {ICall, _, _}} -> ICall;
+                    _ -> undefined_call
+                end
+            end;
+        true -> undefined_process_info end
+    end, erlang:processes()),
+    Aggregated = lists:keysort(2, dict:to_list(lists:foldl(Reducee, dict:new(), AllInitCalls))),
+    Total = length(AllInitCalls),
+    {{total_process_count, Total}, Aggregated}.
+
+
+%% Get pids of processes matching the provided module name
+matching_pids(Call) ->
+lists:filter(fun(Pid) ->
+    {Mod, _Fn, _Ar} = case erlang:process_info(Pid, initial_call) of
+                      {initial_call,{proc_lib,init_p,A}} ->
+                          case erlang:process_info(Pid, dictionary) of
+                              {dictionary, D} -> proplists:get_value('$initial_call', D, undefined);
+                              _ -> {proc_lib,init_p,A}
+                          end;
+                      {initial_call,{erlang,apply,A}} ->
+                          case erlang:process_info(Pid, current_function) of
+                              {current_function,MFA} -> MFA;
+                              _ -> {erlang,apply, A}
+                          end;
+                      {initial_call, IC} ->
+                          {IC, undefined, undefined};
+                      _Else ->
+                          {undefined_module, undefined, undefined}
+                end,
+    if Mod =:= Call -> true; true -> false end end, erlang:processes()).
