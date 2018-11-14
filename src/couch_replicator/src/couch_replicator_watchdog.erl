@@ -39,6 +39,7 @@
 -record(watchdog_state, {
     sweep_cycle = 0 :: non_neg_integer(),
     stuck_repls = [] :: [urepl()],
+    crashed_repls = [] :: [binary()],
     round = 0 :: non_neg_integer(),
     timer = null :: reference() | null,
     interval = 0 :: non_neg_integer()
@@ -95,16 +96,57 @@ terminate(_Reason, _State) ->
 
 
 -spec run_health_check(watchdog_state()) -> watchdog_state().
-run_health_check(#watchdog_state{round=CurrentRound,sweep_cycle=SweepCycle}=State) ->
+run_health_check(#watchdog_state{round=CurrentRound,sweep_cycle=SweepCycle}=State0) ->
   MaxRounds = max_rounds(),
   InfoMsg = "[round: ~p] [max_rounds: ~p] [sweep_cycle: ~p] [round_interval: ~p]",
   couch_log:warning("couch_replicator_watchdog: heartbeat " ++ InfoMsg,
                     [CurrentRound, MaxRounds, SweepCycle, round_interval()]),
-  UpdState = update_stuck_repls(State),
-  if CurrentRound =:= MaxRounds ->
-      reload_stuck_repls(get_stuck_repls_ids(UpdState#watchdog_state.stuck_repls)),
-      State#watchdog_state{round=0, sweep_cycle=SweepCycle + 1, stuck_repls=[]};
-  true -> UpdState#watchdog_state{round = CurrentRound + 1} end.
+  State1 = update_stuck_repls(State0),
+  if CurrentRound =:= 0 ->
+      CrashedRepls = filter_crashed_repls(couch_replicator_scheduler:jobs()),
+      State1#watchdog_state{round = CurrentRound + 1,
+                            crashed_repls = CrashedRepls};
+  CurrentRound =:= MaxRounds ->
+      maybe_reload_crashed_repls(State1#watchdog_state.crashed_repls),
+      reload_stuck_repls(get_stuck_repls_ids(State1#watchdog_state.stuck_repls)),
+      State0#watchdog_state{round=0,
+                            sweep_cycle=SweepCycle + 1,
+                            stuck_repls=[],
+                            crashed_repls=[]};
+  true ->
+      State1#watchdog_state{round = CurrentRound + 1} end.
+
+
+-spec filter_crashed_repls([any()] | []) -> [any()] | [].
+filter_crashed_repls([]) ->
+    [];
+filter_crashed_repls(Jobs) ->
+    lists:filtermap(fun({Job}) ->
+        History = couch_util:get_value(history, Job, []),
+        if History =/= [] ->
+            {JobRecord} = hd(History),
+            case couch_util:get_value(type, JobRecord) of
+                crashed ->
+                    {true, couch_util:get_value(id, Job)};
+                _Else ->
+                    false
+            end;
+        true -> false end
+    end, Jobs).
+
+
+-spec maybe_reload_crashed_repls([binary()] | []) -> ok.
+maybe_reload_crashed_repls([]) ->
+    ok;
+maybe_reload_crashed_repls(CrashedRepls) ->
+    FreshCrashedRepls = filter_crashed_repls(couch_replicator_scheduler:jobs()),
+    ReplJobsToReload = [Job || Job <- FreshCrashedRepls, lists:member(Job, CrashedRepls)],
+    couch_log:warning("couch_replicator_watchdog: ~p replication(s) in the crashed state will be restarted: ~p",
+                      [length(ReplJobsToReload), ReplJobsToReload]),
+    lists:foreach(fun(JobId) ->
+        couch_replicator:restart_job(JobId)
+    end, ReplJobsToReload),
+    ok.
 
 
 -spec update_stuck_repls(watchdog_state()) -> watchdog_state().
