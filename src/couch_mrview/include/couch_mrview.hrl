@@ -115,3 +115,5 @@
     code,
     headers
 }).
+
+-define(REM_VAL, removed).

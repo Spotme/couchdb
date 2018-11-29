@@ -422,11 +422,15 @@ fold_changes(Bt, Fun, Acc, Opts) ->
 fold_changes_fun(_Fun, [], Acc) ->
     {ok, Acc};
 fold_changes_fun(Fun, [KV|Rest],  Acc) ->
-    case Fun(KV, Acc) of
-        {ok, Acc2} ->
-            fold_changes_fun(Fun, Rest, Acc2);
-        {stop, Acc2} ->
-            {stop, Acc2}
+    if element(2, KV) =/= ?REM_VAL ->
+        case Fun(KV, Acc) of
+            {ok, Acc2} ->
+                fold_changes_fun(Fun, Rest, Acc2);
+            {stop, Acc2} ->
+                {stop, Acc2}
+        end;
+    true ->
+        {ok, Acc}
     end.
 
 
