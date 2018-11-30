@@ -149,6 +149,16 @@ db_close(#httpdb{httpc_pool = Pool} = HttpDb) ->
 db_close(DbName) ->
     catch couch_db:close(DbName).
 
+get_view_info(#httpdb{} = Db, DDocId, ViewName) ->
+    Path = lists:flatten([DDocId, "/_view/", ViewName, "/_last_seq"]),
+    send_req(Db,
+            [{path, Path}],
+            fun(200, _, {Props}) -> {ok, Props} end
+    );
+get_view_info(Db, DDocId, ViewName) ->
+    DbName = couch_db:name(Db),
+    {ok, Info} = fabric:get_view_info(DbName, DDocId, ViewName),
+    {ok, [{couch_util:to_binary(K), V} || {K, V} <- Info]}.
 
 get_db_info(#httpdb{} = Db) ->
     send_req(Db, [],
@@ -187,19 +197,6 @@ get_pending_count(Db, Seq) when is_number(Seq) ->
     Pending = couch_db:count_changes_since(CountDb, Seq),
     couch_db:close(CountDb),
     {ok, Pending}.
-
-get_view_info(#httpdb{} = Db, DDocId, ViewName) ->
-    Path = io_lib:format("~s/_view/~s/_info", [DDocId, ViewName]),
-    send_req(Db, [{path, Path}],
-        fun(200, _, {Props}) ->
-            {VInfo} = couch_util:get_value(<<"view_index">>, Props, {[]}),
-            {ok, VInfo}
-        end);
-get_view_info(Db, DDocId, ViewName) ->
-    DbName = couch_db:name(Db),
-    {ok, VInfo} = couch_mrview:get_view_info(DbName, DDocId, ViewName),
-    {ok, [{couch_util:to_binary(K), V} || {K, V} <- VInfo]}.
-
 
 ensure_full_commit(#httpdb{} = Db) ->
     send_req(

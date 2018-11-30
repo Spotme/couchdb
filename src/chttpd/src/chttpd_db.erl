@@ -85,10 +85,19 @@ handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
 
 handle_changes_req1(#httpd{}=Req, Db) ->
     #changes_args{filter=Raw, style=Style} = Args0 = parse_changes_query(Req),
-    ChangesArgs = Args0#changes_args{
-        filter_fun = couch_changes:configure_filter(Raw, Style, Req, Db),
-        db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
-    },
+    case couch_changes:configure_filter(Raw, Style, Req, Db) of
+      {FilterFun, ViewArgs} when is_list(ViewArgs), ViewArgs /= [] ->
+        ChangesArgs = Args0#changes_args{
+              filter_fun = FilterFun,
+              filter_args = ViewArgs,
+              db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
+          };
+      FilterFun ->
+        ChangesArgs = Args0#changes_args{
+            filter_fun = FilterFun,
+            db_open_options = [{user_ctx, couch_db:get_user_ctx(Db)}]
+        }
+    end,
     Max = chttpd:chunked_response_buffer_size(),
     case ChangesArgs#changes_args.feed of
     "normal" ->

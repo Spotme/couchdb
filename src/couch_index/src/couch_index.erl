@@ -81,6 +81,7 @@ get_compactor_pid(Pid) ->
 
 init({Mod, IdxState}) ->
     DbName = Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     erlang:send_after(?CHECK_INTERVAL, self(), maybe_close),
     Resp = couch_util:with_db(DbName, fun(Db) ->
         case Mod:open(Db, IdxState) of
@@ -102,11 +103,12 @@ init({Mod, IdxState}) ->
                 compactor=CPid
             },
             Args = [
-                Mod:get(db_name, IdxState),
-                Mod:get(idx_name, IdxState),
+                DbName,
+                IdxName,
                 couch_index_util:hexsig(Mod:get(signature, IdxState))
             ],
             couch_log:debug("Opening index for db: ~s idx: ~s sig: ~p", Args),
+            couch_event:notify(DbName, {index_create, IdxName}),
             proc_lib:init_ack({ok, self()}),
             gen_server:enter_loop(?MODULE, [], State);
         Other ->
@@ -124,16 +126,19 @@ terminate(Reason0, State) ->
             Mod:close(IdxState),
             Reason = Reason0
     end,
+    DbName =  Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     send_all(State#st.waiters, Reason),
     couch_util:shutdown_sync(State#st.updater),
     couch_util:shutdown_sync(State#st.compactor),
     Args = [
-        Mod:get(db_name, IdxState),
-        Mod:get(idx_name, IdxState),
+        DbName,
+        IdxName,
         couch_index_util:hexsig(Mod:get(signature, IdxState)),
         Reason
     ],
     couch_log:debug("Closing index for db: ~s idx: ~s sig: ~p because ~r", Args),
+    couch_event:notify(DbName, {index_delete, IdxName}),
     ok.
 
 
@@ -281,11 +286,12 @@ handle_cast(delete, State) ->
     {stop, normal, State};
 handle_cast({ddoc_updated, DDocResult}, State) ->
     #st{mod = Mod, idx_state = IdxState} = State,
+    DbName = Mod:get(db_name, IdxState),
+    IdxName = Mod:get(idx_name, IdxState),
     Shutdown = case DDocResult of
         {not_found, deleted} ->
             true;
         {ok, DDoc} ->
-            DbName = Mod:get(db_name, IdxState),
             couch_util:with_db(DbName, fun(Db) ->
                 {ok, NewIdxState} = Mod:init(Db, DDoc),
                 Mod:get(signature, NewIdxState) =/= Mod:get(signature, IdxState)
@@ -295,6 +301,7 @@ handle_cast({ddoc_updated, DDocResult}, State) ->
         true ->
             {stop, {shutdown, ddoc_updated}, State#st{shutdown = true}};
         false ->
+            couch_event:notify(DbName, {index_delete, IdxName}),
             {noreply, State#st{shutdown = false}}
     end;
 handle_cast(ddoc_updated, State) ->
@@ -314,6 +321,7 @@ handle_cast(ddoc_updated, State) ->
         true ->
             {stop, {shutdown, ddoc_updated}, State#st{shutdown = true}};
         false ->
+            couch_event:notify(DbName, {index_delete, DDocId}),
             {noreply, State#st{shutdown = false}}
     end;
 handle_cast(_Mesg, State) ->

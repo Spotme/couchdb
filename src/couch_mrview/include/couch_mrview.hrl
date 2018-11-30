@@ -18,6 +18,7 @@
     idx_name,
     language,
     design_opts=[],
+    include_deleted=false,
     seq_indexed=false,
     keyseq_indexed=false,
     lib,
@@ -114,3 +115,5 @@
     code,
     headers
 }).
+
+-define(REM_VAL, removed).

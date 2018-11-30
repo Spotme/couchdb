@@ -93,6 +93,20 @@ handle_view_req(#httpd{method='POST',
             throw({bad_request, "`keys` and `queries` are mutually exclusive"})
     end;
 
+handle_view_req(#httpd{method='GET',
+        path_parts=[_, _, _, _, ViewName, <<"_last_seq">>]}=Req, Db, DDoc) ->
+    {ok, GroupInfoList} = fabric:get_view_info(Db, DDoc, ViewName),
+    LastSeq = proplists:get_value(update_seq, GroupInfoList, 0),
+    chttpd:send_json(Req, {[
+        {name, ViewName},
+        {last_seq, LastSeq}
+    ]});
+
+handle_view_req(#httpd{method='GET',
+    path_parts=[_, _, _, _, ViewName, <<"_info">>]}=Req, Db, DDoc) ->
+    {ok, Info} = fabric:get_view_info(Db, DDoc, ViewName),
+    chttpd:send_json(Req, {Info});
+
 handle_view_req(Req, _Db, _DDoc) ->
     chttpd:send_method_not_allowed(Req, "GET,POST,HEAD").
 

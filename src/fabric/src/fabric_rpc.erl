@@ -16,7 +16,7 @@
          get_update_seq/1]).
 -export([open_doc/3, open_revs/4, get_doc_info/3, get_full_doc_info/3,
     get_missing_revs/2, get_missing_revs/3, update_docs/3]).
--export([all_docs/3, changes/3, map_view/4, reduce_view/4, group_info/2]).
+-export([all_docs/3, changes/3, map_view/4, reduce_view/4, group_info/2, view_info/3]).
 -export([create_db/1, create_db/2, delete_db/1, reset_validation_funs/1,
     set_security/3, set_revs_limit/3, create_shard_db_doc/2,
     delete_shard_db_doc/2]).
@@ -26,7 +26,7 @@
 
 -export([get_db_info/2, get_doc_count/2, get_design_doc_count/2,
          get_update_seq/2, changes/4, map_view/5, reduce_view/5,
-         group_info/3, update_mrview/4]).
+         group_info/3, update_mrview/4, view_info/4]).
 
 -include_lib("fabric/include/fabric.hrl").
 -include_lib("couch/include/couch_db.hrl").
@@ -45,47 +45,23 @@ changes(DbName, #changes_args{} = Args, StartSeq, DbOptions) ->
 changes(DbName, Options, StartVector, DbOptions) ->
     set_io_priority(DbName, DbOptions),
     Args0 = lists:keyfind(changes_args, 1, Options),
-    #changes_args{dir=Dir, filter_fun=Filter} = Args0,
-    Args = case Filter of
+    case Args0#changes_args.filter_fun of
         {fetch, custom, Style, Req, {DDocId, Rev}, FName} ->
             {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
-            Args0#changes_args{
+            Args1 = Args0#changes_args{
                 filter_fun={custom, Style, Req, DDoc, FName}
-            };
-        {fetch, FilterType, Style, {DDocId, Rev}, VName}
-                when FilterType == view orelse FilterType == fast_view ->
+            },
+            db_changes(DbName, Options, StartVector, DbOptions, Args1);
+        {fetch, view, Style, {DDocId, Rev}, VName} ->
             {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
-            Args0#changes_args{filter_fun={FilterType, Style, DDoc, VName}};
+            Args1 = Args0#changes_args{filter_fun={view, Style, DDoc, VName}},
+            db_changes(DbName, Options, StartVector, DbOptions, Args1);
+        {fetch, fast_view, Style, {DDocId, Rev}, VName} ->
+            {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
+            Args1 = Args0#changes_args{filter_fun={fast_view, Style, DDoc, VName}},
+            view_changes(DbName, Options, StartVector, DbOptions, Args1);
         _ ->
-            Args0
-    end,
-
-    DbOpenOptions = Args#changes_args.db_open_options ++ DbOptions,
-    case get_or_create_db(DbName, DbOpenOptions) of
-    {ok, Db} ->
-        StartSeq = calculate_start_seq(Db, node(), StartVector),
-        Enum = fun changes_enumerator/2,
-        Opts = [{dir,Dir}],
-        Acc0 = #fabric_changes_acc{
-          db = Db,
-          seq = StartSeq,
-          args = Args,
-          options = Options,
-          pending = couch_db:count_changes_since(Db, StartSeq),
-          epochs = couch_db:get_epochs(Db)
-        },
-        try
-            {ok, #fabric_changes_acc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
-                do_changes(Db, StartSeq, Enum, Acc0, Opts),
-            rexi:stream_last({complete, [
-                {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
-                {pending, Pending}
-            ]})
-        after
-            couch_db:close(Db)
-        end;
-    Error ->
-        rexi:stream_last(Error)
+            db_changes(DbName, Options, StartVector, DbOptions, Args0)
     end.
 
 do_changes(Db, StartSeq, Enum, Acc0, Opts) ->
@@ -114,6 +90,71 @@ do_changes(Db, StartSeq, Enum, Acc0, Opts) ->
             couch_changes:send_changes_design_docs(Db, StartSeq, Dir, Enum, Acc0, {design_docs, Style});
         _ ->
             couch_db:fold_changes(Db, StartSeq, Enum, Acc0, Opts)
+    end.
+
+db_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
+    DbOpenOptions = ChangeArgs#changes_args.db_open_options ++ DbOptions,
+    case get_or_create_db(DbName, DbOpenOptions) of
+    {ok, Db} ->
+        #changes_args{dir=Dir} = ChangeArgs,
+        StartSeq = calculate_start_seq(Db, node(), StartVector),
+        Enum = fun changes_enumerator/2,
+        Opts = [{dir,Dir}],
+        Acc0 = #fabric_changes_acc{
+          db = Db,
+          seq = StartSeq,
+          args = ChangeArgs,
+          options = Options,
+          pending = couch_db:count_changes_since(Db, StartSeq),
+          epochs = couch_db:get_epochs(Db)
+        },
+        try
+            {ok, #fabric_changes_acc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
+                do_changes(Db, StartSeq, Enum, Acc0, Opts),
+            rexi:stream_last({complete, [
+                {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
+                {pending, Pending}
+            ]})
+        after
+            couch_db:close(Db)
+        end;
+    Error ->
+        rexi:stream_last(Error)
+    end.
+
+view_changes(DbName, Options, StartVector, DbOptions, ChangeArgs) ->
+    DbOpenOptions = ChangeArgs#changes_args.db_open_options ++ DbOptions,
+    case get_or_create_db(DbName, DbOpenOptions) of
+    {ok, Db} ->
+        #changes_args{filter_args=FilterArgs,
+                      filter_fun={_FilterType, _Style, DDoc, VName}} = ChangeArgs,
+        StartSeq = calculate_start_seq(Db, node(), StartVector),
+        Enum = fun({{_Seq, _Key, DocId}, _Val}, Acc) ->
+                    case couch_db:get_doc_info(Db, DocId) of
+                        {ok, DocInfo} -> changes_enumerator(DocInfo, Acc);
+                        _ ->  {ok, Acc}
+                    end
+                end,
+        Acc0 = #fabric_changes_acc{
+          db = Db,
+          seq = StartSeq,
+          args = ChangeArgs,
+          options = Options,
+          pending = couch_mrview:count_view_changes_since(Db, DDoc, VName, StartSeq, FilterArgs),
+          epochs = couch_db:get_epochs(Db)
+        },
+        try
+            {ok, #fabric_changes_acc{seq=LastSeq, pending=Pending, epochs=Epochs}} =
+                couch_mrview:view_changes_since(Db, DDoc, VName, StartSeq, Enum, FilterArgs, Acc0),
+            rexi:stream_last({complete, [
+                {seq, {LastSeq, uuid(Db), couch_db:owner_of(Epochs, LastSeq)}},
+                {pending, Pending}
+            ]})
+        after
+            couch_db:close(Db)
+        end;
+    Error ->
+        rexi:stream_last(Error)
     end.
 
 all_docs(DbName, Options, Args0) ->
@@ -296,6 +337,17 @@ group_info(DbName, DDocId) ->
 
 group_info(DbName, DDocId, DbOptions) ->
     with_db(DbName, DbOptions, {couch_mrview, get_info, [DDocId]}).
+
+view_info(DbName, DDocId, VName) ->
+    view_info(DbName, DDocId, VName, []).
+
+view_info(DbName, {DDocId, Rev}, VName, DbOptions) ->
+    {ok, DDoc} = ddoc_cache:open_doc(mem3:dbname(DbName), DDocId, Rev),
+    view_info(DbName, DDoc, VName, DbOptions);
+view_info(DbName, DDoc, VName, DbOptions) ->
+    {ok, Db} = get_or_create_db(DbName, DbOptions),
+    Reply = couch_mrview:get_view_info(Db, DDoc, VName),
+    rexi:reply(Reply).
 
 reset_validation_funs(DbName) ->
     case get_or_create_db(DbName, []) of
