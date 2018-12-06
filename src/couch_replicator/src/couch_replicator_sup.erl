@@ -62,6 +62,12 @@ init(_Args) ->
             brutal_kill,
             worker,
             [couch_replicator_doc_processor]},
+        {couch_replicator_watchdog,
+            {couch_replicator_watchdog, start_link, []},
+            permanent,
+            brutal_kill,
+            worker,
+        [couch_replicator_watchdog]},
         {couch_replicator,
             % This is a simple function call which does not create a process
             % but returns `ignore`. It is used to make sure each node
