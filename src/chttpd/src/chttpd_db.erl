@@ -1015,21 +1015,18 @@ send_docs_multipart_bulk_get(Results, Options0, OuterBoundary, Resp) ->
     InnerBoundary = bulk_get_multipart_boundary(),
     Options = [attachments, follows, att_encoding_info | Options0],
     lists:foreach(
-        fun({ok, #doc{id=Id, revs=Revs, atts=Atts}=Doc}) ->
+        fun({ok, #doc{id=Id, atts=Atts}=Doc}) ->
             Refs = monitor_attachments(Doc#doc.atts),
             try
             JsonBytes = ?JSON_ENCODE(couch_doc:to_json_obj(Doc, Options)),
             couch_httpd:send_chunk(Resp, <<"\r\n--", OuterBoundary/binary>>),
-            case Atts of
-              [] ->
-                couch_httpd:send_chunk(Resp, <<"\r\nContent-Type: application/json\r\n\r\n">>);
-              _ ->
-                lists:foreach(fun(Header) -> couch_httpd:send_chunk(Resp, Header) end,
-                              bulk_get_multipart_headers(Revs, Id, InnerBoundary))
-            end,
+            {ContentType, _Len} = couch_doc:len_doc_to_multi_part_stream(
+                InnerBoundary, JsonBytes, Atts, true),
+            couch_httpd:send_chunk(Resp, <<"\r\nX-Doc-Id: ", Id/binary>>),
+            couch_httpd:send_chunk(Resp, <<"\r\nContent-Type: ",
+                ContentType/binary, "\r\n\r\n">>),
             couch_doc:doc_to_multi_part_stream(InnerBoundary, JsonBytes, Atts,
-                    fun(Data) -> couch_httpd:send_chunk(Resp, Data)
-                    end, true)
+                fun(Data) -> couch_httpd:send_chunk(Resp, Data) end, true)
             after
                 demonitor_refs(Refs)
             end;
@@ -1079,18 +1076,6 @@ send_docs_multipart(Req, Results, Options1) ->
     couch_httpd:send_chunk(Resp, <<"--">>),
     couch_httpd:last_chunk(Resp).
 
-bulk_get_multipart_headers({0, []}, Id, Boundary) ->
-    [
-        <<"\r\nX-Doc-Id: ", Id/binary>>,
-        <<"\r\nContent-Type: multipart/related; boundary=", Boundary/binary, "\r\n\r\n">>
-    ];
-bulk_get_multipart_headers({Start, [FirstRevId|_]}, Id, Boundary) ->
-    RevStr = couch_doc:rev_to_str({Start, FirstRevId}),
-    [
-        <<"\r\nX-Doc-Id: ", Id/binary>>,
-        <<"\r\nX-Rev-Id: ", RevStr/binary>>,
-        <<"\r\nContent-Type: multipart/related; boundary=", Boundary/binary, "\r\n\r\n">>
-    ].
 
 bulk_get_multipart_boundary() ->
     Unique = couch_uuids:random(),
