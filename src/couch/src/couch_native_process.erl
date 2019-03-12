@@ -74,6 +74,11 @@ prompt(Pid, Data) when is_list(Data) ->
 init([]) ->
     V = config:get("query_server_config", "os_process_idle_limit", "300"),
     Idle = list_to_integer(V) * 1000,
+    ets:new(compiled_vdr_funs, [
+        set,
+        private,
+        named_table
+    ]),
     {ok, #evstate{ddocs=dict:new(), idle=Idle}, Idle}.
 
 handle_call({set_timeout, TimeOut}, _From, State) ->
@@ -370,8 +375,23 @@ makefun(State, Source) ->
     {Sig, makefun(State, Source, BindFuns)}.
 makefun(State, Source, {DDoc}) ->
     Sig = couch_hash:md5_hash(lists:flatten([Source, term_to_binary(DDoc)])),
-    BindFuns = bindings(State, Sig, {DDoc}),
-    {Sig, makefun(State, Source, BindFuns)};
+    DDocId = couch_util:get_value(<<"_id">>, DDoc),
+    VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
+    Fun1 = if DDocId =:= <<"_design/validate">> andalso VDR =/= undefined ->
+        case ets:lookup(compiled_vdr_funs, Sig) of
+            [{Sig1, FunRef}] when is_function(FunRef, 3) andalso Sig1 =:= Sig ->
+                FunRef;
+            _Else ->
+                BindFuns0 = bindings(State, Sig, {DDoc}),
+                CompiledFun = makefun(State, Source, BindFuns0),
+                true = ets:insert(compiled_vdr_funs, {Sig, CompiledFun}),
+                CompiledFun
+        end;
+    true ->
+        BindFuns1 = bindings(State, Sig, {DDoc}),
+        makefun(State, Source, BindFuns1)
+    end,
+    {Sig, Fun1};
 makefun(_State, Source, BindFuns) when is_list(BindFuns) ->
     FunStr = binary_to_list(Source),
     {ok, Tokens, _} = erl_scan:string(FunStr),
