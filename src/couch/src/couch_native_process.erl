@@ -49,6 +49,7 @@
 -record(evstate, {
     ddocs,
     funs = [],
+    vdr_funs = #{},
     query_config = [],
     list_pid = nil,
     timeout = 5000,
@@ -74,11 +75,6 @@ prompt(Pid, Data) when is_list(Data) ->
 init([]) ->
     V = config:get("query_server_config", "os_process_idle_limit", "300"),
     Idle = list_to_integer(V) * 1000,
-    ets:new(compiled_vdr_funs, [
-        set,
-        private,
-        named_table
-    ]),
     {ok, #evstate{ddocs=dict:new(), idle=Idle}, Idle}.
 
 handle_call({set_timeout, TimeOut}, _From, State) ->
@@ -166,11 +162,12 @@ run(#evstate{list_pid=Pid}=State, _Command) when is_pid(Pid) ->
     {State, [<<"error">>, list_error, list_error]};
 run(#evstate{ddocs=DDocs}, [<<"reset">>]) ->
     {#evstate{ddocs=DDocs}, true};
-run(#evstate{ddocs=DDocs, idle=Idle}, [<<"reset">>, QueryConfig]) ->
+run(#evstate{ddocs=DDocs, idle=Idle, vdr_funs=CachedVdrFuns}, [<<"reset">>, QueryConfig]) ->
     NewState = #evstate{
         ddocs = DDocs,
         query_config = QueryConfig,
-        idle = Idle
+        idle = Idle,
+        vdr_funs=CachedVdrFuns
     },
     {NewState, true};
 run(#evstate{funs=Funs}=State, [<<"add_fun">> , BinFunc]) ->
@@ -202,8 +199,8 @@ run(#evstate{ddocs=DDocs}=State, [<<"ddoc">>, DDocId | Rest]) ->
 run(_, Unknown) ->
     couch_log:error("Native Process: Unknown command: ~p~n", [Unknown]),
     throw({error, unknown_command}).
-    
-ddoc(State, {DDoc}, [FunPath, Args]) ->
+
+ddoc(#evstate{vdr_funs=VdrFuns}=State, {DDoc}, [FunPath, Args]) ->
     % load fun from the FunPath
     BFun = lists:foldl(fun
         (Key, {Props}) when is_list(Props) ->
@@ -215,7 +212,21 @@ ddoc(State, {DDoc}, [FunPath, Args]) ->
         (_Key, _Fun) ->
             throw({error, malformed_ddoc})
         end, {DDoc}, FunPath),
-    ddoc(State, makefun(State, BFun, {DDoc}), FunPath, Args).
+    DDocId = couch_util:get_value(<<"_id">>, DDoc),
+    VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
+    {State1, {Sig1, Fun1}} = if DDocId =:= <<"_design/validate">> andalso VDR =/= undefined ->
+        VDRRev0 = couch_util:get_value(<<"_rev">>, DDoc),
+        case VdrFuns of
+            #{VDRRev0 := FunRef} when is_function(FunRef, 3) ->
+                {State, {<<>>, FunRef}};
+            _Else ->
+                {Sig0, CompiledFun} = makefun(State, BFun, {DDoc}),
+                {State#evstate{vdr_funs=#{VDRRev0 => CompiledFun}}, {Sig0, CompiledFun}}
+        end;
+    true ->
+        {State, makefun(State, BFun, {DDoc})}
+    end,
+    ddoc(State1, {Sig1, Fun1}, FunPath, Args).
 
 ddoc(State, {_, Fun}, [<<"validate_doc_update">>], Args) ->
     {State, (catch apply(Fun, Args))};
@@ -375,23 +386,8 @@ makefun(State, Source) ->
     {Sig, makefun(State, Source, BindFuns)}.
 makefun(State, Source, {DDoc}) ->
     Sig = couch_hash:md5_hash(lists:flatten([Source, term_to_binary(DDoc)])),
-    DDocId = couch_util:get_value(<<"_id">>, DDoc),
-    VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
-    Fun1 = if DDocId =:= <<"_design/validate">> andalso VDR =/= undefined ->
-        case ets:lookup(compiled_vdr_funs, Sig) of
-            [{Sig1, FunRef}] when is_function(FunRef, 3) andalso Sig1 =:= Sig ->
-                FunRef;
-            _Else ->
-                BindFuns0 = bindings(State, Sig, {DDoc}),
-                CompiledFun = makefun(State, Source, BindFuns0),
-                true = ets:insert(compiled_vdr_funs, {Sig, CompiledFun}),
-                CompiledFun
-        end;
-    true ->
-        BindFuns1 = bindings(State, Sig, {DDoc}),
-        makefun(State, Source, BindFuns1)
-    end,
-    {Sig, Fun1};
+    BindFuns = bindings(State, Sig, {DDoc}),
+    {Sig, makefun(State, Source, BindFuns)};
 makefun(_State, Source, BindFuns) when is_list(BindFuns) ->
     FunStr = binary_to_list(Source),
     {ok, Tokens, _} = erl_scan:string(FunStr),
