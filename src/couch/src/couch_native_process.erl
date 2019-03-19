@@ -214,7 +214,9 @@ ddoc(#evstate{vdr_funs=VdrFuns}=State, {DDoc}, [FunPath, Args]) ->
         end, {DDoc}, FunPath),
     DDocId = couch_util:get_value(<<"_id">>, DDoc),
     VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
-    {State1, {Sig1, Fun1}} = if DDocId =:= <<"_design/validate">> andalso VDR =/= undefined ->
+    {State1, {Sig1, Fun1}} = if DDocId =:= <<"_design/validate">> andalso
+                                VDR =/= undefined andalso
+                                FunPath =:= [<<"validate_doc_read">>] ->
         VDRRev0 = couch_util:get_value(<<"_rev">>, DDoc),
         case VdrFuns of
             #{VDRRev0 := FunRef} when is_function(FunRef, 3) ->
