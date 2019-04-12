@@ -23,6 +23,7 @@ function create_sandbox() {
     sandbox.registerType = Mime.registerType;
     sandbox.start = Render.start;
     sandbox.send = Render.send;
+    sandbox.index = Dreyfus.index;
     sandbox.getRow = Render.getRow;
     sandbox.isArray = isArray;
   } catch (e) {
@@ -112,6 +113,7 @@ var Loop = function() {
     // "view"    : Views.handler,
     "reset"    : State.reset,
     "add_fun"  : State.addFun,
+    "index_doc": Dreyfus.indexDoc,
     "add_lib"  : State.addLib,
     "map_doc"  : Views.mapDoc,
     "reduce"   : Views.reduce,

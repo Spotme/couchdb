@@ -55,6 +55,7 @@ DepDescs = [
 {snappy,           "snappy",           {tag, "CouchDB-1.0.2"}},
 {ioq,              "ioq",              {tag, "1.0.1"}},
 
+{dreyfus,          "dreyfus",          "df88b1c1da6ab63dc23059587f0b9c872342feec"},
 %% Non-Erlang deps
 {docs,             {url, "https://github.com/apache/couchdb-documentation"},
                    {tag, "2.3.0"}, [raw]},
@@ -73,6 +74,9 @@ DepDescs = [
 BaseUrl = "https://github.com/apache/",
 
 MakeDep = fun
+    ({AppName, RepoName, Version}) when AppName == dreyfus ->
+        Url = "https://github.com/cloudant-labs/" ++ RepoName ++ ".git",
+        {AppName, ".*", {git, Url, Version}};
     ({AppName, {url, Url}, Version}) ->
         {AppName, ".*", {git, Url, Version}};
     ({AppName, {url, Url}, Version, Options}) ->
