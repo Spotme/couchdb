@@ -50,6 +50,7 @@
     ddocs,
     funs = [],
     vdr_funs = #{},
+    vdu_funs= #{},
     query_config = [],
     list_pid = nil,
     timeout = 5000,
@@ -162,12 +163,13 @@ run(#evstate{list_pid=Pid}=State, _Command) when is_pid(Pid) ->
     {State, [<<"error">>, list_error, list_error]};
 run(#evstate{ddocs=DDocs}, [<<"reset">>]) ->
     {#evstate{ddocs=DDocs}, true};
-run(#evstate{ddocs=DDocs, idle=Idle, vdr_funs=CachedVdrFuns}, [<<"reset">>, QueryConfig]) ->
+run(#evstate{ddocs=DDocs, idle=Idle, vdr_funs=CachedVdrFuns, vdu_funs=CachedVduFuns}, [<<"reset">>, QueryConfig]) ->
     NewState = #evstate{
         ddocs = DDocs,
         query_config = QueryConfig,
         idle = Idle,
-        vdr_funs=CachedVdrFuns
+        vdr_funs=CachedVdrFuns,
+        vdu_funs=CachedVduFuns
     },
     {NewState, true};
 run(#evstate{funs=Funs}=State, [<<"add_fun">> , BinFunc]) ->
@@ -200,7 +202,7 @@ run(_, Unknown) ->
     couch_log:error("Native Process: Unknown command: ~p~n", [Unknown]),
     throw({error, unknown_command}).
 
-ddoc(#evstate{vdr_funs=VdrFuns}=State, {DDoc}, [FunPath, Args]) ->
+ddoc(State, {DDoc}, [FunPath, Args]) ->
     % load fun from the FunPath
     BFun = lists:foldl(fun
         (Key, {Props}) when is_list(Props) ->
@@ -212,22 +214,7 @@ ddoc(#evstate{vdr_funs=VdrFuns}=State, {DDoc}, [FunPath, Args]) ->
         (_Key, _Fun) ->
             throw({error, malformed_ddoc})
         end, {DDoc}, FunPath),
-    DDocId = couch_util:get_value(<<"_id">>, DDoc),
-    VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
-    {State1, {Sig1, Fun1}} = if DDocId =:= <<"_design/validate">> andalso
-                                VDR =/= undefined andalso
-                                FunPath =:= [<<"validate_doc_read">>] ->
-        VDRRev0 = couch_util:get_value(<<"_rev">>, DDoc),
-        case VdrFuns of
-            #{VDRRev0 := FunRef} when is_function(FunRef, 3) ->
-                {State, {<<>>, FunRef}};
-            _Else ->
-                {Sig0, CompiledFun} = makefun(State, BFun, {DDoc}),
-                {State#evstate{vdr_funs=#{VDRRev0 => CompiledFun}}, {Sig0, CompiledFun}}
-        end;
-    true ->
-        {State, makefun(State, BFun, {DDoc})}
-    end,
+    {State1, {Sig1, Fun1}} = maybe_cache_validate_funs(State, BFun, DDoc, FunPath),
     ddoc(State1, {Sig1, Fun1}, FunPath, Args).
 
 ddoc(State, {_, Fun}, [<<"validate_doc_update">>], Args) ->
@@ -306,6 +293,43 @@ ddoc(State, {Sig, Fun}, [<<"lists">>|_], Args) ->
         throw({timeout, list_start})
     end,
     {State#evstate{list_pid=Pid}, Resp}.
+
+maybe_cache_validate_funs(#evstate{vdr_funs=VdrFuns, vdu_funs=VduFuns}=State, BFun, DDoc, FunPath) ->
+    DDocId = couch_util:get_value(<<"_id">>, DDoc),
+    if DDocId =:= <<"_design/validate">> ->
+        Rev = couch_util:get_value(<<"_rev">>, DDoc),
+        if FunPath =:= [<<"validate_doc_read">>] ->
+            VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
+            if VDR =/= undefined ->   
+                case VdrFuns of
+                    #{Rev := VdrFunRef} when is_function(VdrFunRef, 3) ->
+                        {State, {<<>>, VdrFunRef}};
+                    _Else ->
+                        {Sig0, CompiledVDRFun} = makefun(State, BFun, {DDoc}),
+                        {State#evstate{vdr_funs=#{Rev => CompiledVDRFun}}, {Sig0, CompiledVDRFun}}
+                end;
+            true -> 
+                {State, makefun(State, BFun, {DDoc})} 
+            end;
+        FunPath =:= [<<"validate_doc_update">>] ->
+            VDU = couch_util:get_value(<<"validate_doc_update">>, DDoc),
+            if VDU =/= undefined ->
+                case VduFuns of
+                    #{Rev := VduFunRef} when is_function(VduFunRef, 4) ->
+                        {State, {<<>>, VduFunRef}};
+                    __Else ->
+                        {Sig1, CompiledVDUFun} = makefun(State, BFun, {DDoc}),
+                        {State#evstate{vdu_funs=#{Rev => CompiledVDUFun}}, {Sig1, CompiledVDUFun}}
+                end;
+            true ->
+                {State, makefun(State, BFun, {DDoc})}
+            end;
+        true ->
+            {State, makefun(State, BFun, {DDoc})}
+        end;
+    true ->
+        {State, makefun(State, BFun, {DDoc})}
+    end.
 
 store_ddoc(DDocs, DDocId, DDoc) ->
     dict:store(DDocId, DDoc, DDocs).
