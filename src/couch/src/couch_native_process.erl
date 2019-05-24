@@ -300,7 +300,7 @@ maybe_cache_validate_funs(#evstate{vdr_funs=VdrFuns, vdu_funs=VduFuns}=State, BF
         Rev = couch_util:get_value(<<"_rev">>, DDoc),
         if FunPath =:= [<<"validate_doc_read">>] ->
             VDR = couch_util:get_value(<<"validate_doc_read">>, DDoc),
-            if VDR =/= undefined ->   
+            if VDR =/= undefined ->
                 case VdrFuns of
                     #{Rev := VdrFunRef} when is_function(VdrFunRef, 3) ->
                         {State, {<<>>, VdrFunRef}};
@@ -308,8 +308,8 @@ maybe_cache_validate_funs(#evstate{vdr_funs=VdrFuns, vdu_funs=VduFuns}=State, BF
                         {Sig0, CompiledVDRFun} = makefun(State, BFun, {DDoc}),
                         {State#evstate{vdr_funs=#{Rev => CompiledVDRFun}}, {Sig0, CompiledVDRFun}}
                 end;
-            true -> 
-                {State, makefun(State, BFun, {DDoc})} 
+            true ->
+                {State, makefun(State, BFun, {DDoc})}
             end;
         FunPath =:= [<<"validate_doc_update">>] ->
             VDU = couch_util:get_value(<<"validate_doc_update">>, DDoc),
