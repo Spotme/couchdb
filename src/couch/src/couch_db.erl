@@ -811,16 +811,19 @@ group_alike_docs([Doc|Rest], [Bucket|RestBuckets]) ->
        group_alike_docs(Rest, [[Doc]|[Bucket|RestBuckets]])
     end.
 
-validate_doc_update(#db{}=Db, #doc{id= <<"_design/",_/binary>>}=Doc, _GetDiskDocFun) ->
-    case catch check_is_admin(Db) of
-        ok -> validate_ddoc(Db#db.name, Doc);
-        Error -> Error
-    end;
 validate_doc_update(#db{validate_doc_funs = undefined} = Db, Doc, Fun) ->
     {ValidationFuns, _} = load_validation_funs(Db),
     validate_doc_update(Db#db{validate_doc_funs=ValidationFuns}, Doc, Fun);
-validate_doc_update(#db{validate_doc_funs=[]}, _Doc, _GetDiskDocFun) ->
-    ok;
+validate_doc_update(#db{validate_doc_funs=[]}=Db, Doc, _GetDiskDocFun) ->
+    case Doc#doc.id of
+        <<"_design/",_/binary>> ->
+            case catch check_is_admin(Db) of
+                ok -> validate_ddoc(Db#db.name, Doc);
+                Error -> Error
+            end;
+    _Else ->
+        ok
+    end;
 validate_doc_update(_Db, #doc{id= <<"_local/",_/binary>>}, _GetDiskDocFun) ->
     ok;
 validate_doc_update(Db, Doc, GetDiskDocFun) ->
@@ -828,7 +831,19 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         {internal_repl, _} ->
             ok;
         _ ->
-            validate_doc_update_int(Db, Doc, GetDiskDocFun)
+            case Doc#doc.id of
+                <<"_design/",_/binary>> ->
+                    case catch check_is_admin(Db) of
+                        ok -> validate_ddoc(Db#db.name, Doc);
+                        Error -> Error
+                    end;
+                _Else ->
+                    ok
+            end,
+            case config:get("couchdb", "disable_vdu", "false") of
+                "true" -> ok;
+                __Else -> validate_doc_update_int(Db, Doc, GetDiskDocFun)
+            end
     end.
 
 validate_ddoc(DbName, DDoc) ->
