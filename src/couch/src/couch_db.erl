@@ -843,7 +843,7 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
             DbName = mem3:dbname(Db#db.name),
             case config:get("couchdb", "disable_vdu", "false") of
                 "true" -> ok;
-                "false" when DbName =:= <<"_users">> orelse 
+                "false" when DbName =:= <<"_users">> orelse
                              DbName =:= <<"_replicator">> orelse
                              DbName =:= <<"_global_changes">> -> ok;
                 __Else -> validate_doc_update_int(Db, Doc, GetDiskDocFun)
