@@ -842,9 +842,9 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
             case config:get("couchdb", "disable_vdu", "false") of
                 "true" -> ok;
                 "false" when (DbName =:= <<"_users">> orelse
-                             DbName =:= <<"_replicator">> orelse
-                             DbName =/= <<"_global_changes">>) andalso
-                             IsDDoc =/= nomatch -> ok;
+                              DbName =:= <<"_replicator">> orelse
+                              DbName =:= <<"_global_changes">>) andalso
+                              IsDDoc =/= nomatch -> ok;
                 _Else -> validate_doc_update_int(Db, Doc, GetDiskDocFun)
             end
     end.
