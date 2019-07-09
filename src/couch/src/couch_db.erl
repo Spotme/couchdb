@@ -831,15 +831,6 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
         {internal_repl, _} ->
             ok;
         _ ->
-            case Doc#doc.id of
-                <<"_design/",_/binary>> ->
-                    case catch check_is_admin(Db) of
-                        ok -> validate_ddoc(Db#db.name, Doc);
-                        Error -> Error
-                    end;
-                _Else ->
-                    ok
-            end,
             IsDDoc = binary:match(Doc#doc.id, <<"_design/">>),
             DbName = mem3:dbname(Db#db.name),
             if IsDDoc =/= nomatch ->
