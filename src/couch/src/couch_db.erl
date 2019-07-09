@@ -840,13 +840,21 @@ validate_doc_update(Db, Doc, GetDiskDocFun) ->
                 _Else ->
                     ok
             end,
+            IsDDoc = binary:match(Doc#doc.id, <<"_design/">>),
             DbName = mem3:dbname(Db#db.name),
+            if IsDDoc =/= nomatch ->
+                case catch check_is_admin(Db) of
+                    ok -> validate_ddoc(Db#db.name, Doc);
+                    Error -> Error
+                end;
+            true -> ok end,
             case config:get("couchdb", "disable_vdu", "false") of
                 "true" -> ok;
-                "false" when DbName =:= <<"_users">> orelse
+                "false" when (DbName =:= <<"_users">> orelse
                              DbName =:= <<"_replicator">> orelse
-                             DbName =:= <<"_global_changes">> -> ok;
-                __Else -> validate_doc_update_int(Db, Doc, GetDiskDocFun)
+                             DbName =/= <<"_global_changes">>) andalso
+                             IsDDoc =/= nomatch -> ok;
+                _Else -> validate_doc_update_int(Db, Doc, GetDiskDocFun)
             end
     end.
 
