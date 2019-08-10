@@ -131,7 +131,7 @@ maybe_reload_crashed_repls() ->
             [CrashedReplsN]),
         couch_stats:increment_counter([couch_replicator, watchdog, restart_crashed], CrashedReplsN),
         lists:foreach(fun({JobId, DocId}) ->
-            couch_log:warning("couch_replicator_watchdog: restarting ~p crashed replication with id: ~p", 
+            couch_log:warning("couch_replicator_watchdog: restarting ~p crashed replication with id: ~p",
                 [DocId, JobId]),
             couch_replicator:restart_job(JobId)
         end, ReplJobsToReload);
@@ -208,8 +208,8 @@ reload_stuck_repls(Jobs) ->
   couch_log:alert("couch_replicator_watchdog: ~p replication(s) got stuck and will be restarted",[StuckReplsN]),
   couch_stats:increment_counter([couch_replicator, watchdog, restart_stalled], StuckReplsN),
   lists:foreach(fun({JobId, DocId}) ->
-      couch_log:warning("couch_replicator_watchdog: restarting ~p replication with id: ~p", [DocId, JobId]),  
-      couch_replicator:restart_job(JobId) 
+      couch_log:warning("couch_replicator_watchdog: restarting ~p replication with id: ~p", [DocId, JobId]),
+      couch_replicator:restart_job(JobId)
   end, Jobs),
   ok.
 
