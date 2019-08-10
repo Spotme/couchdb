@@ -22,7 +22,8 @@
         couch_replicator_clustering,
         couch_replicator_scheduler,
         couch_replicator_scheduler_sup,
-        couch_replicator_doc_processor
+        couch_replicator_doc_processor,
+        couch_replicator_watchdog
     ]},
     {applications, [
         kernel,
