@@ -1,16 +1,17 @@
 Apache CouchDB README
 =====================
 
-SpotMe for of Apache CouchDB
+SpotMe fork of the Apache CouchDB
 
-Patches (not a full list)
+Patches (not a full list). Also doesn't include those merged into upstream
 ------------- 
 
-### 1. Support for `validate_doc_read` functions (JS and native Erlang ones).
+1. Support for `validate_doc_read` functions (JS and native Erlang ones).
 
 CouchDB already has support for [validate_doc_update](http://docs.couchdb.org/en/master/ddocs/ddocs.html#validate-document-update-functions) functions which if defined in the design doc can be used to prevent invalid or unauthorised document update requests from being stored. In other words document-level write security. This patch further enhances security via adding a fine-grained document-level read security. Patch implements a support for `validate_doc_read` functions.
 
 ### NB
+
 `validate_doc_read` has a bit different semantics when is used together with `_bulk_get`. Normally for a single GET request which violates VDR rules the response will be `403 Forbidden`. But when the forbidden document is requested as a part of `{"id", "rev"}` batch in the `_bulk_get` CouchDB instead of throwing an error for the whole batch returns a so-called "stub" of the forbidden document which always has `validate_doc_read_error` field the value of which is `"forbidden"` and optionally a detailed description and the VDR error code.
 ```
 "_id" : "id",
@@ -37,32 +38,26 @@ Additional `KeyBySeq` index allows to apply familiar view query params to change
 **UPD** This functionality has been submitted to the upstream repo in this [PR](https://github.com/apache/couchdb/pull/1195) and hopefully will be merged soon. PR also has a detailed description and motivation of the feature.
 
 
-Documentation
--------------
+### 4. Recon patch
 
-We have documentation:
+Integrates Fred Herbert's recon patch into our CouchDB build to troubleshoot production nodes.
 
-    http://docs.couchdb.org/
 
-It includes a changelog:
+### 5. CouchDB replicator-watchdog
 
-    http://docs.couchdb.org/en/latest/whatsnew/
+Fixes CouchDB scheduled continuous replications and makes them more reliable and close to real-time requirements imposed by some of SpotMe critical business features. Namely monitors for slow or "stuck" replication jobs within `couch_replicator` supervision tree and re-forces them as well as handles crashing replication jobs which were suspended by the scheduler.
+https://github.com/Spotme/couchdb/pull/2
 
-For troubleshooting or cryptic error messages, see:
+### 6.  _bulk-get with `multipart/mixed` response (merged into upstream)
 
-    http://docs.couchdb.org/en/latest/install/troubleshooting.html
+This also was a SpotMe patch but has been accepted into the upstream. Soon afterwards there was found an issue with `_bulk_get` when `atts_since` param was causing a malformed `multipart/mixed` response. This was fixed on the SpotMe side and PR to the upstream should be sent. As this is a bug there are very high chances it will be accepted but for now this is a separate `0009` patch.
 
-For general help, see:
+Patches which containg small fixes or those which already have been merged into upstream are not mentioned here:
+https://github.com/apache/couchdb/pull/1401
+https://github.com/apache/couchdb/pull/1165
+https://github.com/apache/couchdb/pull/1164
 
-     http://couchdb.apache.org/#mailing-list
-     
-We also have an IRC channel:
 
-    http://webchat.freenode.net/?channels=couchdb
-
-The mailing lists provide a wealth of support and knowledge for you to tap into.
-Feel free to drop by with your questions or discussion. See the official CouchDB
-website for more information about our community resources.
 
 Verifying your Installation
 ---------------------------
