@@ -539,7 +539,7 @@ key_authentication_handler(Req) ->
                     end;
 	            _ ->
                     couch_log:error("X-Auth-Key is malformed", []),
-                    couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                    couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]),
                     throw({unauthorized, <<"invalid key">>})
             end
     end.
