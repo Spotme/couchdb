@@ -522,22 +522,22 @@ key_authentication_handler(Req) ->
 		    case key_authentication_parse_auth_key(AuthKey) of
                 [DbName, Key] ->
                     ReqDbName = case Req#httpd.path_parts of
-                        [Name|_] when is_binary(Name) -> 
+                        [Name|_] when is_binary(Name) ->
                             Name;
                         _ ->
                             couch_log:error("X-Auth-Key: no DB name was specified in the request", []),
-                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]),
                             throw({unauthorized, <<"invalid key">>})
                     end,
                     case ReqDbName =:= DbName of
-                        false -> 
+                        false ->
                             couch_log:error("X-Auth-Key: request to ~p invalid database name ~p", [ReqDbName, DbName]),
-                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]),
                             throw({unauthorized, <<"invalid key">>});
-                        true -> 
+                        true ->
                             key_authentication_validate_auth_key(Req, DbName, Key)
                     end;
-	            _ -> 
+	            _ ->
                     couch_log:error("X-Auth-Key is malformed", []),
                     couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
                     throw({unauthorized, <<"invalid key">>})
@@ -562,7 +562,7 @@ key_authentication_get_auth_key(DbName, Key) ->
     try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
         {ok, ViewResponse} ->
             couch_stats:increment_counter([couchdb, x_auth_key_view_queries]),
-            case couch_util:get_value(row, ViewResponse) of 
+            case couch_util:get_value(row, ViewResponse) of
                 KV when is_list(KV), KV =/= [] ->
                     case couch_util:get_value(value, KV) of
                         {AuthKeyValue} when is_list(AuthKeyValue), AuthKeyValue =/= [] ->
@@ -570,11 +570,11 @@ key_authentication_get_auth_key(DbName, Key) ->
                         _ ->
                             undefined
                     end;
-                _ -> 
+                _ ->
                     undefined
             end
     catch
-        Class:Reason:Stacktrace -> 
+        Class:Reason:Stacktrace ->
             couch_log:error("_design/auth_keys/by_key view: ~p ~p ~p", [Class, Reason, Stacktrace]),
             undefined
     end.
