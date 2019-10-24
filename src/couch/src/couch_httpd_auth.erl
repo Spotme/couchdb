@@ -15,6 +15,7 @@
 -compile(tuple_calls).
 
 -include_lib("couch/include/couch_db.hrl").
+-include_lib("couch_mrview/include/couch_mrview.hrl").
 
 -export([party_mode_handler/1]).
 
@@ -23,6 +24,7 @@
 -export([cookie_authentication_handler/1, cookie_authentication_handler/2]).
 -export([null_authentication_handler/1]).
 -export([proxy_authentication_handler/1, proxy_authentification_handler/1]).
+-export([key_authentication_handler/1]).
 -export([cookie_auth_header/2]).
 -export([handle_session_req/1, handle_session_req/2]).
 
@@ -509,3 +511,82 @@ authentication_warning(#httpd{mochi_req = Req}, User) ->
     Peer = Req:get(peer),
     couch_log:warning("~p: Authentication failed for user ~s from ~s",
         [?MODULE, User, Peer]).
+
+%% ------------------------------------------------------------------
+%% x-auth-key handler
+%% ------------------------------------------------------------------
+key_authentication_handler(Req) ->
+    case key_authentication_extract_auth_key(Req) of
+        undefined -> Req;
+        AuthKey ->
+		    case key_authentication_parse_auth_key(AuthKey) of
+                [DbName, Key] ->
+                    ReqDbName = case Req#httpd.path_parts of
+                        [Name|_] when is_binary(Name) -> 
+                            Name;
+                        _ ->
+                            couch_log:error("X-Auth-Key: no DB name was specified in the request", []),
+                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                            throw({unauthorized, <<"invalid key">>})
+                    end,
+                    case ReqDbName =:= DbName of
+                        false -> 
+                            couch_log:error("X-Auth-Key: request to ~p invalid database name ~p", [ReqDbName, DbName]),
+                            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                            throw({unauthorized, <<"invalid key">>});
+                        true -> 
+                            key_authentication_validate_auth_key(Req, DbName, Key)
+                    end;
+	            _ -> 
+                    couch_log:error("X-Auth-Key is malformed", []),
+                    couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]), 
+                    throw({unauthorized, <<"invalid key">>})
+            end
+    end.
+
+key_authentication_extract_auth_key(Req) ->
+    case couch_httpd:qs_value(Req, "auth_key") of
+      undefined -> couch_httpd:header_value(Req, "X-Auth-Key");
+      AuthKey -> AuthKey
+    end.
+
+key_authentication_parse_auth_key(AuthKey) when is_list(AuthKey) ->
+    key_authentication_parse_auth_key(?l2b(AuthKey));
+key_authentication_parse_auth_key(AuthKey) ->
+    binary:split(AuthKey, <<",">>).
+
+key_authentication_get_auth_key(DbName, Key) ->
+    DesignName = <<"auth_keys">>,
+    ViewName = <<"by_key">>,
+    QueryArgs = #mrargs{start_key=Key, end_key=Key, limit=1, sorted=false},
+    try fabric:query_view(DbName, DesignName, ViewName, QueryArgs) of
+        {ok, ViewResponse} ->
+            couch_stats:increment_counter([couchdb, x_auth_key_view_queries]),
+            case couch_util:get_value(row, ViewResponse) of 
+                KV when is_list(KV), KV =/= [] ->
+                    case couch_util:get_value(value, KV) of
+                        {AuthKeyValue} when is_list(AuthKeyValue), AuthKeyValue =/= [] ->
+                            AuthKeyValue;
+                        _ ->
+                            undefined
+                    end;
+                _ -> 
+                    undefined
+            end
+    catch
+        Class:Reason:Stacktrace -> 
+            couch_log:error("_design/auth_keys/by_key view: ~p ~p ~p", [Class, Reason, Stacktrace]),
+            undefined
+    end.
+
+key_authentication_validate_auth_key(Req, DbName, Key) ->
+    case key_authentication_get_auth_key(DbName, Key) of
+        undefined ->
+            couch_log:error("X-Auth-Key provided was not found in the ~p", [DbName]),
+            couch_stats:increment_counter([couchdb, x_auth_key_invalid_key]),
+            throw({unauthorized, <<"invalid key">>});
+        AuthKeyValue ->
+            couch_stats:increment_counter([couchdb, x_auth_key_success]),
+            Roles = couch_util:get_value(<<"roles">>, AuthKeyValue, []),
+            Req#httpd{user_ctx=#user_ctx{name=Key, roles=Roles}}
+    end.

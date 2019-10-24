@@ -351,6 +351,8 @@ catch_error(HttpReq, error, database_does_not_exist) ->
 catch_error(HttpReq, Tag, Error) ->
     Stack = erlang:get_stacktrace(),
     % TODO improve logging and metrics collection for client disconnects
+    couch_log:debug("~p:~p/~p L~p  Tag:~p Error:~p Request:~p",
+                    [?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY, ?LINE, Tag, Error, HttpReq]),
     case {Tag, Error, Stack} of
         {exit, normal, [{mochiweb_request, send, _, _} | _]} ->
             exit(normal); % Client disconnect (R15+)
