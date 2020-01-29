@@ -88,7 +88,7 @@ basic_name_pw(Req) ->
     end.
 
 default_authentication_handler(Req) ->
-    default_authentication_handler(Req, couch_auth_cache).
+    default_authentication_handler(Req, chttpd_auth_cache).
 
 default_authentication_handler(Req, AuthModule) ->
     case basic_name_pw(Req) of
