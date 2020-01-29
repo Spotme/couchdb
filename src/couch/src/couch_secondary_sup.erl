@@ -32,7 +32,6 @@ init([]) ->
         {vhosts, {couch_httpd_vhost, start_link, []}},
         {httpd, {couch_httpd, start_link, []}},
         {uuids, {couch_uuids, start, []}},
-        {auth_cache, {couch_auth_cache, start_link, []}},
         {compaction_daemon, {couch_compaction_daemon, start_link, []}}
     ],
 
