@@ -109,7 +109,7 @@ DepDescs = [
 {mochiweb,         "mochiweb",         {tag, "CouchDB-v2.18.0-1"}},
 {meck,             "meck",             {tag, "0.8.8"}},
 {recon,            "recon",            {tag, "2.5.0"}},
-{observer_cli,     {url, "https://github.com/zhongwencool/observer_cli"}, {tag, "1.5.4"}},
+{observer_cli,     {url, "https://github.com/zhongwencool/observer_cli"}, {tag, "1.5.4"}}
 ],
 
 
