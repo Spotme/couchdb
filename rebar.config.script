@@ -10,6 +10,44 @@
 % License for the specific language governing permissions and limitations under
 % the License.
 
+%
+% Blacklist unstable Erlang/OTP releases.
+%
+{ok, Version} = file:read_file(filename:join(
+    [code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"]
+)).
+
+% Version may be binary if file has /n at end :(
+% there is no string:trim/1 in Erlang 19 :(
+VerString = case Version of
+    V when is_binary(V) -> string:strip(binary_to_list(V), right, $\n);
+    _ -> string:strip(Version, right, $\n)
+end.
+VerList = lists:map(fun(X) -> {Int, _} = string:to_integer(X), Int end,
+    string:tokens(VerString, ".")).
+
+NotSupported = fun(Ver) ->
+    io:fwrite("CouchDB does not support this version of Erlang (~p).~n", [Ver]),
+    io:fwrite("Check https://docs.couchdb.org/en/latest/whatsnew/index.html for the~n"),
+    io:fwrite("latest information on supported releases.~n"),
+    case os:getenv("TRAVIS") of
+        "true" ->
+            io:fwrite("Travis run, ignoring bad release. You have been warned!~n"),
+            ok;
+        _ -> halt(1)
+    end
+end.
+
+case VerList of
+    [20 | _] = V20 when V20 < [20, 3, 8, 11] -> NotSupported(VerString);
+    [20 | _] = V20 when V20 >= [20, 3, 8, 11] -> ok;
+    [21, 2] -> NotSupported(VerString);
+    [21, 2, N | _] when N < 3 -> NotSupported(VerString);
+    [22, 0] -> NotSupported(VerString);
+    [22, 0, N | _] when N < 5 -> NotSupported(VerString);
+    _ -> ok
+end.
+
 % Set the path to the configuration environment generated
 % by `./configure`.
 
@@ -52,21 +90,26 @@ DepDescs = [
 {b64url,           "b64url",           {tag, "1.0.1"}},
 {ets_lru,          "ets-lru",          {tag, "1.0.0"}},
 {khash,            "khash",            {tag, "1.0.1"}},
-{snappy,           "snappy",           {tag, "CouchDB-1.0.2"}},
-{ioq,              "ioq",              {tag, "1.0.1"}},
+{snappy,           "snappy",           {tag, "CouchDB-1.0.4"}},
+{ioq,              "ioq",              {tag, "2.1.1"}},
+{hqueue,           "hqueue",           {tag, "1.0.1"}},
+{ken,              "ken",              {tag, "1.0.3"}},
 
 %% Non-Erlang deps
 {docs,             {url, "https://github.com/apache/couchdb-documentation"},
                    {tag, "2.3.0"}, [raw]},
 {fauxton,          {url, "https://github.com/apache/couchdb-fauxton"},
                    {tag, "v1.1.19"}, [raw]},
+
 %% Third party deps
 {folsom,           "folsom",           {tag, "CouchDB-0.8.2"}},
 {hyper,            "hyper",            {tag, "CouchDB-2.2.0-4"}},
 {ibrowse,          "ibrowse",          {tag, "CouchDB-4.0.1"}},
-{jiffy,            "jiffy",            {tag, "CouchDB-0.14.11-2"}},
+{jiffy,            "jiffy",            {tag, "CouchDB-1.0.4-1"}},
 {mochiweb,         "mochiweb",         {tag, "CouchDB-v2.18.0-1"}},
-{meck,             "meck",             {tag, "0.8.8"}}
+{meck,             "meck",             {tag, "0.8.8"}},
+{recon,            "recon",            {tag, "2.5.0"}},
+{observer_cli,     {url, "https://github.com/zhongwencool/observer_cli"}, {tag, "1.5.4"}},
 ],
 
 
@@ -91,7 +134,7 @@ ErlOpts = case os:getenv("ERL_OPTS") of
 end,
 
 AddConfig = [
-    {require_otp_vsn, "17|18|19|20|21"},
+    {require_otp_vsn, "19|20|21|22"},
     {deps_dir, "src"},
     {deps, lists:map(MakeDep, DepDescs)},
     {sub_dirs, SubDirs},
