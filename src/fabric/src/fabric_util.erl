@@ -19,6 +19,7 @@
 -export([stream_start/2, stream_start/4]).
 -export([log_timeout/2, remove_done_workers/2]).
 -export([is_users_db/1, is_replicator_db/1, fake_db/2]).
+-export([is_partitioned/1]).
 -export([upgrade_mrargs/1]).
 
 -compile({inline, [{doc_id_and_rev,1}]}).
@@ -298,6 +299,10 @@ is_users_db(DbName) ->
     ConfigName = list_to_binary(config:get(
         "chttpd_auth", "authentication_db", "_users")),
     DbName == ConfigName orelse path_ends_with(DbName, <<"_users">>).
+
+% This is for Dreyfus search compatibility
+is_partitioned(_) ->
+	false.
 
 path_ends_with(Path, Suffix) ->
     Suffix =:= couch_db:dbname_suffix(Path).
