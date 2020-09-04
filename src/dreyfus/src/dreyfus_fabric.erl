@@ -37,7 +37,7 @@ callback(timeout, _Acc) ->
 
 handle_error_message({rexi_DOWN, _, {_, NodeRef}, _}, _Worker,
         Counters, _Replacements, _StartFun, _StartArgs, RingOpts) ->
-    case fabric_util:remove_down_workers(Counters, NodeRef, RingOpts) of
+    case fabric_util:remove_down_workers(Counters, NodeRef) of
     {ok, NewCounters} ->
         {ok, NewCounters};
     error ->
