@@ -57,7 +57,7 @@
     is_system_db/1,
     is_clustered/1,
     is_system_db_name/1,
-	is_partitioned/1,
+    is_partitioned/1,
 
     set_revs_limit/2,
     set_purge_infos_limit/2,
