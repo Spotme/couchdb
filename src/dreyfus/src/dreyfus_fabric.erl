@@ -61,9 +61,9 @@ handle_error_message(Reason, Worker, Counters,
     couch_log:error("Unexpected error during request: ~p", [Reason]),
     handle_error(Reason, Worker, Counters, RingOpts).
 
-handle_error(Reason, Worker, Counters0, RingOpts) ->
+handle_error(Reason, Worker, Counters0, _RingOpts) ->
     Counters = fabric_dict:erase(Worker, Counters0),
-    case fabric_ring:is_progress_possible(Counters, RingOpts) of
+    case fabric_view:is_progress_possible(Counters) of
     true ->
         {ok, Counters};
     false ->
@@ -81,7 +81,7 @@ handle_replacement(Worker, OldCntrs0, OldReplacements, StartFun, StartArgs,
                 NewCounter = start_replacement(StartFun, StartArgs, Repl),
                 fabric_dict:store(NewCounter, nil, CounterAcc)
             end, OldCounters, Replacements),
-            true = fabric_ring:is_progress_possible(NewCounters, RingOpts),
+            true = fabric_view:is_progress_possible(NewCounters),
             NewRefs = fabric_dict:fetch_keys(NewCounters),
             {new_refs, NewRefs, NewCounters, NewReplacements};
         false ->
