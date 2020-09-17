@@ -190,15 +190,6 @@ docid(UserName) ->
 username(<<"org.couchdb.user:", UserName/binary>>) ->
     UserName.
 
-
-update_doc_ignoring_conflict(DbName, Doc, Options) ->
-    try
-        fabric:update_doc(DbName, Doc, Options)
-    catch
-        throw:conflict ->
-            ok
-    end.
-
 maybe_validate_user_creds(nil) ->
     nil;
 % throws if UserCreds includes a _conflicts member
