@@ -139,7 +139,6 @@ spawn_changes(Since) ->
     Pid.
 
 listen_for_changes(Since) ->
-    ensure_auth_ddoc_exists(dbname(), <<"_design/_auth">>),
     CBFun = fun ?MODULE:changes_callback/2,
     Args = #changes_args{
         feed = "continuous",
@@ -191,27 +190,6 @@ docid(UserName) ->
 username(<<"org.couchdb.user:", UserName/binary>>) ->
     UserName.
 
-ensure_auth_ddoc_exists(DbName, DDocId) ->
-    case fabric:open_doc(DbName, DDocId, [?ADMIN_CTX, ejson_body]) of
-    {not_found, _Reason} ->
-        {ok, AuthDesign} = couch_auth_cache:auth_design_doc(DDocId),
-        update_doc_ignoring_conflict(DbName, AuthDesign, [?ADMIN_CTX]);
-    {ok, Doc} ->
-        {Props} = couch_doc:to_json_obj(Doc, []),
-        case couch_util:get_value(<<"validate_doc_update">>, Props, []) of
-            ?AUTH_DB_DOC_VALIDATE_FUNCTION ->
-                ok;
-            _ ->
-                Props1 = lists:keyreplace(<<"validate_doc_update">>, 1, Props,
-                    {<<"validate_doc_update">>,
-                    ?AUTH_DB_DOC_VALIDATE_FUNCTION}),
-                update_doc_ignoring_conflict(DbName, couch_doc:from_json_obj({Props1}), [?ADMIN_CTX])
-        end;
-    {error, Reason} ->
-        couch_log:notice("Failed to ensure auth ddoc ~s/~s exists for reason: ~p", [DbName, DDocId, Reason]),
-        ok
-    end,
-    ok.
 
 update_doc_ignoring_conflict(DbName, Doc, Options) ->
     try

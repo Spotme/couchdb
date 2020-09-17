@@ -441,32 +441,11 @@ ensure_users_db_exists(DbName, Options) ->
     Options1 = [?ADMIN_CTX, nologifmissing | Options],
     case couch_db:open(DbName, Options1) of
     {ok, Db} ->
-        ensure_auth_ddoc_exists(Db, <<"_design/_auth">>),
         {ok, Db};
     _Error ->
         {ok, Db} = couch_db:create(DbName, Options1),
-        ok = ensure_auth_ddoc_exists(Db, <<"_design/_auth">>),
         {ok, Db}
     end.
-
-ensure_auth_ddoc_exists(Db, DDocId) ->
-    case couch_db:open_doc(Db, DDocId) of
-    {not_found, _Reason} ->
-        {ok, AuthDesign} = auth_design_doc(DDocId),
-        {ok, _Rev} = couch_db:update_doc(Db, AuthDesign, []);
-    {ok, Doc} ->
-        {Props} = couch_doc:to_json_obj(Doc, []),
-        case couch_util:get_value(<<"validate_doc_update">>, Props, []) of
-            ?AUTH_DB_DOC_VALIDATE_FUNCTION ->
-                ok;
-            _ ->
-                Props1 = lists:keyreplace(<<"validate_doc_update">>, 1, Props,
-                    {<<"validate_doc_update">>,
-                    ?AUTH_DB_DOC_VALIDATE_FUNCTION}),
-                couch_db:update_doc(Db, couch_doc:from_json_obj({Props1}), [])
-        end
-    end,
-    ok.
 
 auth_design_doc(DocId) ->
     DocProps = [
