@@ -102,14 +102,19 @@ go(DbName, Options, QueryArgs, Callback, Acc0) ->
                     [{total, TotalRows}, {offset, null}, {update_seq, null}]
             end,
             {ok, Acc1} = Callback({meta, Meta}, Acc0),
-            {ok, Acc2} = doc_receive_loop(
+            Resp = doc_receive_loop(
                 Keys3, queue:new(), SpawnFun, MaxJobs, Callback, Acc1
             ),
-            Callback(complete, Acc2);
+            case Resp of
+                {ok, Acc2} ->
+                    Callback(complete, Acc2);
+                timeout ->
+                    Callback({error, timeout}, Acc0)
+            end;
         {'DOWN', Ref, _, _, Error} ->
             Callback({error, Error}, Acc0)
     after Timeout ->
-        Callback(timeout, Acc0)
+        Callback({error, timeout}, Acc0)
     end.
 
 go(DbName, _Options, Workers, QueryArgs, Callback, Acc0) ->
