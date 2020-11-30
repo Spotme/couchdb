@@ -52,10 +52,12 @@ proxy_authentication_handler(Req) ->
     couch_httpd_auth:proxy_authentication_handler(Req).
 
 party_mode_handler(Req) ->
-    case config:get("chttpd", "require_valid_user", "false") of
-    "true" ->
+    RequireValidUser = config:get_boolean("chttpd", "require_valid_user", false),
+    ExceptUp = config:get_boolean("chttpd", "require_valid_user_except_for_up", true),
+    case RequireValidUser andalso not ExceptUp of
+    true ->
         throw({unauthorized, <<"Authentication required.">>});
-    "false" ->
+    false ->
         case config:get("admins") of
         [] ->
             Req#httpd{user_ctx = ?ADMIN_USER};
