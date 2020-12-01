@@ -73,7 +73,6 @@ require_valid_user(Req, false) ->
             Req#httpd{user_ctx = ?ADMIN_USER};
         _ ->
             Req#httpd{user_ctx=#user_ctx{}}
-        end
     end.
 
 handle_session_req(Req) ->
