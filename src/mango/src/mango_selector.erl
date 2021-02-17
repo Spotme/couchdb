@@ -52,15 +52,18 @@ normalize(Selector) ->
 % Match a selector against a #doc{} or EJSON value.
 % This assumes that the Selector has been normalized.
 % Returns true or false.
+match(Selector, D) ->
+    couch_stats:increment_counter([mango, evaluate_selector]),
+    match_int(Selector, D).
 
 % An empty selector matches any value.
-match({[]}, _) ->
+match_int({[]}, _) ->
     true;
 
-match(Selector, #doc{body=Body}) ->
+match_int(Selector, #doc{body=Body}) ->
     match(Selector, Body, fun mango_json:cmp/2);
 
-match(Selector, {Props}) ->
+match_int(Selector, {Props}) ->
     match(Selector, {Props}, fun mango_json:cmp/2).
 
 % Convert each operator into a normalized version as well
