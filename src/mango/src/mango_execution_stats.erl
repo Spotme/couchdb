@@ -82,12 +82,11 @@ log_end(Stats) ->
     }.
 
 
-maybe_add_stats(Opts, UserFun, Stats0, UserAcc) ->
-    Stats1 = log_end(Stats0),
-    couch_stats:update_histogram([mango, query_time], Stats1#execution_stats.executionTimeMs),
+maybe_add_stats(Opts, UserFun, Stats, UserAcc) ->
     case couch_util:get_value(execution_stats, Opts) of
         true ->
-            JSONValue = to_json(Stats1),
+            Stats0 = log_end(Stats),
+            JSONValue = to_json(Stats0),
             Arg = {add_key, execution_stats, JSONValue},
             {_Go, FinalUserAcc} = UserFun(Arg, UserAcc),
             FinalUserAcc;
